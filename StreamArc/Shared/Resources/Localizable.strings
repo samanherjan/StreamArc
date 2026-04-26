@@ -1,0 +1,44 @@
+/* StreamArc Localizable Strings */
+
+/* Tabs */
+"tab.liveTV" = "Live TV";
+"tab.movies" = "Movies";
+"tab.series" = "Series";
+"tab.search" = "Search";
+"tab.settings" = "Settings";
+
+/* Onboarding */
+"onboarding.title" = "StreamArc";
+"onboarding.subtitle" = "Your streams. Your sources.";
+"onboarding.cta" = "Add Your First Source";
+
+/* Source Types */
+"source.m3u" = "M3U Playlist";
+"source.stalker" = "MAG / Stalker Portal";
+"source.xtream" = "Xtream Codes";
+"source.enigma2" = "Enigma2 / E2";
+
+/* Common */
+"common.cancel" = "Cancel";
+"common.save" = "Save";
+"common.retry" = "Retry";
+"common.loading" = "Loading…";
+"common.noResults" = "No results";
+"common.upgrade" = "Upgrade to StreamArc+";
+"common.play" = "Play";
+"common.trailer" = "▶ Trailer";
+
+/* Paywall */
+"paywall.title" = "StreamArc+";
+"paywall.subtitle" = "Unlock the full experience";
+"paywall.restore" = "Restore Purchases";
+"paywall.bestValue" = "Best Value";
+"paywall.freeTrial" = "7-day free trial";
+
+/* Ads */
+"ads.trackingPrompt" = "StreamArc uses this to show you relevant ads. Upgrade to StreamArc+ to remove all ads.";
+
+/* Errors */
+"error.connection" = "Could not connect to source";
+"error.parsing" = "Failed to parse playlist";
+"error.notFound" = "No content found";

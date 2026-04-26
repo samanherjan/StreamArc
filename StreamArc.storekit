@@ -1,0 +1,121 @@
+{
+  "identifier" : "StreamArc",
+  "nonConsumableProducts" : [
+    {
+      "displayPrice" : "29.99",
+      "familyShareable" : false,
+      "internalID" : "lifetime_001",
+      "localizations" : [
+        {
+          "description" : "Unlock all StreamArc+ features forever — one-time purchase, no subscription.",
+          "displayName" : "StreamArc+ Lifetime",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "streamarc.premium.lifetime",
+      "referenceName" : "StreamArc+ Lifetime",
+      "type" : "NonConsumable"
+    }
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "streamarc_premium_group",
+      "localizations" : [
+        {
+          "locale" : "en_US",
+          "name" : "StreamArc+"
+        }
+      ],
+      "name" : "StreamArc+",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "monthly_001",
+          "introductoryOffer" : {
+            "duration" : 1,
+            "durationUnit" : "WEEK",
+            "offerID" : "monthly_trial",
+            "offerMode" : "FREE_TRIAL",
+            "offerType" : "introductory"
+          },
+          "localizations" : [
+            {
+              "description" : "Full access to all StreamArc+ features, billed monthly. 7-day free trial.",
+              "displayName" : "Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "streamarc.premium.monthly",
+          "referenceName" : "StreamArc+ Monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "39.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "yearly_001",
+          "introductoryOffer" : {
+            "duration" : 1,
+            "durationUnit" : "WEEK",
+            "offerID" : "yearly_trial",
+            "offerMode" : "FREE_TRIAL",
+            "offerType" : "introductory"
+          },
+          "localizations" : [
+            {
+              "description" : "Full access to all StreamArc+ features, billed yearly. Best value — 7-day free trial.",
+              "displayName" : "Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "streamarc.premium.yearly",
+          "referenceName" : "StreamArc+ Yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

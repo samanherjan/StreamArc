@@ -1,0 +1,165 @@
+name: StreamArc
+
+options:
+  bundleIdPrefix: com.samanherjan.streamarc
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+  defaultConfig: Debug
+
+packages:
+  Kingfisher:
+    url: https://github.com/onevcat/Kingfisher
+    from: "8.0.0"
+  GoogleMobileAds:
+    url: https://github.com/googleads/swift-package-manager-google-mobile-ads
+    from: "11.0.0"
+  AppLovinSDK:
+    url: https://github.com/AppLovin/AppLovin-MAX-Swift-Package
+    from: "13.0.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+    ENABLE_BITCODE: NO
+    SWIFT_STRICT_CONCURRENCY: targeted
+
+targets:
+
+  # ─── iOS / iPadOS ────────────────────────────────────────────────
+  StreamArc:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: StreamArc/App/iOS
+      - path: StreamArc/App/Shared
+      - path: StreamArc/Core
+      - path: StreamArc/Features
+      - path: StreamArc/Shared
+      - path: StreamArc/Monetization
+      - path: StreamArc/Ads
+      - path: StreamArc/Resources
+    dependencies:
+      - package: Kingfisher
+      - package: GoogleMobileAds
+        product: GoogleMobileAds
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samanherjan.streamarc
+        INFOPLIST_FILE: StreamArc/App/iOS/Info.plist
+        DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
+    info:
+      path: StreamArc/App/iOS/Info.plist
+      properties:
+        CFBundleDisplayName: StreamArc
+        UILaunchScreen:
+          UIColorName: ""
+        GADApplicationIdentifier: "ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX"
+        NSUserTrackingUsageDescription: "StreamArc uses this to show you relevant ads. Upgrade to StreamArc+ to remove all ads."
+        LSRequiresIPhoneOS: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        SKAdNetworkItems:
+          - SKAdNetworkIdentifier: "cstr6suwn9.skadnetwork"
+          - SKAdNetworkIdentifier: "4fzdc2evr5.skadnetwork"
+
+  # ─── tvOS ────────────────────────────────────────────────────────
+  StreamArc_tvOS:
+    type: application
+    platform: tvOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: StreamArc/App/tvOS
+      - path: StreamArc/App/Shared
+      - path: StreamArc/Core
+      - path: StreamArc/Features
+      - path: StreamArc/Shared
+      - path: StreamArc/Monetization
+      - path: StreamArc/Ads
+      - path: StreamArc/Resources
+    dependencies:
+      - package: Kingfisher
+      - package: AppLovinSDK
+        product: AppLovinSDK
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samanherjan.streamarc.tvos
+        INFOPLIST_FILE: StreamArc/App/tvOS/Info.plist
+        DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
+    info:
+      path: StreamArc/App/tvOS/Info.plist
+
+  # ─── macOS ───────────────────────────────────────────────────────
+  StreamArc_macOS:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: StreamArc/App/macOS
+      - path: StreamArc/App/Shared
+      - path: StreamArc/Core
+      - path: StreamArc/Features
+      - path: StreamArc/Shared
+      - path: StreamArc/Monetization
+      - path: StreamArc/Ads
+      - path: StreamArc/Resources
+    dependencies:
+      - package: Kingfisher
+      - package: GoogleMobileAds
+        product: GoogleMobileAds
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samanherjan.streamarc.macos
+        INFOPLIST_FILE: StreamArc/App/macOS/Info.plist
+        DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
+    info:
+      path: StreamArc/App/macOS/Info.plist
+      properties:
+        CFBundleDisplayName: StreamArc
+        GADApplicationIdentifier: "ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX"
+        LSApplicationCategoryType: public.app-category.entertainment
+        NSPrincipalClass: NSApplication
+
+  # ─── Unit Tests ──────────────────────────────────────────────────
+  StreamArcTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: StreamArcTests
+    dependencies:
+      - target: StreamArc
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samanherjan.streamarc.tests
+        INFOPLIST_FILE: ""
+
+schemes:
+  StreamArc:
+    build:
+      targets:
+        StreamArc: all
+    run:
+      config: Debug
+      storeKitConfiguration: StreamArc.storekit
+    test:
+      config: Debug
+      targets:
+        - StreamArcTests
+
+  StreamArc_tvOS:
+    build:
+      targets:
+        StreamArc_tvOS: all
+    run:
+      config: Debug
+      storeKitConfiguration: StreamArc.storekit
+
+  StreamArc_macOS:
+    build:
+      targets:
+        StreamArc_macOS: all
+    run:
+      config: Debug
+      storeKitConfiguration: StreamArc.storekit
