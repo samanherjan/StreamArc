@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 
 // 2D EPG grid: channels on Y-axis, time slots on X-axis.
@@ -80,7 +81,7 @@ struct EPGGridView: View {
             .background(program.isCurrentlyAiring ? Color.saAccent.opacity(0.25) : Color.saCard)
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .cardFocusable()
 #if os(tvOS)
         .buttonStyle(.card)
         .focusable()
@@ -139,7 +140,7 @@ struct EPGGridView: View {
             .padding()
             .background(Color.saSurface)
         }
-        .buttonStyle(.plain)
+        .cardFocusable()
         .paywallSheet(isPresented: $showPaywall)
     }
 

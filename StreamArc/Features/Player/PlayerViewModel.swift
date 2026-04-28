@@ -1,3 +1,4 @@
+import StreamArcCore
 import Foundation
 import AVKit
 import Combine
@@ -17,6 +18,11 @@ final class PlayerViewModel: NSObject {
     var currentChannelIndex: Int = 0
     private var allChannels: [Channel] = []
     private var timeObserver: Any?
+    private var statusObservation: NSKeyValueObservation?
+    private var stalkerClient: StalkerClient?
+    private var sourceType: SourceType = .m3u
+    private var retryCount = 0
+    private static let maxRetries = 2
 
 #if !os(tvOS)
     private var pipController: AVPictureInPictureController?
@@ -24,20 +30,82 @@ final class PlayerViewModel: NSObject {
 
     // MARK: - Setup
 
+    /// Primary setup: sanitises URL, resolves Stalker streams, configures AVPlayer.
     func setup(url: URL, channels: [Channel] = [], currentIndex: Int = 0) {
         cleanup()
         allChannels = channels
         currentChannelIndex = currentIndex
+        retryCount = 0
+        error = nil
+        isLoading = true
 
-        let item = AVPlayerItem(url: url)
-        let avPlayer = AVPlayer(playerItem: item)
-        self.player = avPlayer
+        Task { @MainActor in
+            await startPlayback(url: url)
+        }
+    }
 
-        observeStatus(item: item)
-        observeTime(avPlayer: avPlayer)
+    /// Configure the source context so the player knows how to resolve Stalker URLs.
+    func configureSource(profile: Profile) {
+        sourceType = profile.sourceType
+        if profile.sourceType == .stalker,
+           let portal = profile.portalURL,
+           let mac = profile.macAddress {
+            stalkerClient = StalkerClient(config: .init(portalURL: portal, macAddress: mac))
+        } else {
+            stalkerClient = nil
+        }
+    }
 
-        avPlayer.play()
-        isPlaying = true
+    private func startPlayback(url: URL) async {
+        do {
+            let resolvedURL = try await resolveStreamURL(url)
+            let item = AVPlayerItem(url: resolvedURL)
+            item.preferredForwardBufferDuration = 5
+
+            let avPlayer = AVPlayer(playerItem: item)
+            avPlayer.automaticallyWaitsToMinimizeStalling = true
+            self.player = avPlayer
+
+            observeStatus(item: item)
+            observeTime(avPlayer: avPlayer)
+
+            avPlayer.play()
+            isPlaying = true
+        } catch {
+            self.isLoading = false
+            self.error = "Failed to load stream: \(error.localizedDescription)"
+        }
+    }
+
+    /// Resolves the final playable URL. Strips "ffmpeg " prefix, resolves Stalker cmd URLs.
+    private func resolveStreamURL(_ url: URL) async throws -> URL {
+        var urlString = url.absoluteString
+
+        // Strip common "ffmpeg " prefix from Stalker/portal URLs
+        if urlString.hasPrefix("ffmpeg ") {
+            urlString = String(urlString.dropFirst(7))
+        }
+
+        // Stalker sources need server-side link creation
+        if sourceType == .stalker, let client = stalkerClient {
+            do {
+                try await client.authenticate()
+                let resolved = try await client.resolveStreamURL(cmd: urlString)
+                let clean = resolved.hasPrefix("ffmpeg ") ? String(resolved.dropFirst(7)) : resolved
+                guard let finalURL = URL(string: clean) else {
+                    throw URLError(.badURL)
+                }
+                return finalURL
+            } catch {
+                // If resolution fails, try the raw URL as fallback
+                print("[PlayerVM] Stalker resolve failed, trying raw URL: \(error)")
+            }
+        }
+
+        guard let finalURL = URL(string: urlString) else {
+            throw URLError(.badURL)
+        }
+        return finalURL
     }
 
     // MARK: - Playback controls
@@ -122,28 +190,49 @@ final class PlayerViewModel: NSObject {
     // MARK: - Cleanup
 
     func cleanup() {
+        statusObservation?.invalidate()
+        statusObservation = nil
         if let obs = timeObserver {
             player?.removeTimeObserver(obs)
             timeObserver = nil
         }
         player?.pause()
+        player?.replaceCurrentItem(with: nil)
         player = nil
         isLoading = true
+        error = nil
     }
 
-    // MARK: - Observation
+    // MARK: - Observation (KVO — reliable across all platforms including tvOS)
 
     private func observeStatus(item: AVPlayerItem) {
-        Task { @MainActor [weak self] in
-            for await status in item.publisher(for: \.status).values {
-                switch status {
+        statusObservation?.invalidate()
+        statusObservation = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch item.status {
                 case .readyToPlay:
-                    self?.isLoading = false
-                    self?.duration = item.duration.seconds.isFinite ? item.duration.seconds : 0
+                    self.isLoading = false
+                    self.error = nil
+                    let dur = try? await item.asset.load(.duration)
+                    if let dur, dur.seconds.isFinite {
+                        self.duration = dur.seconds
+                    }
                 case .failed:
-                    self?.isLoading = false
-                    self?.error = item.error?.localizedDescription ?? "Playback failed"
-                default: break
+                    // Retry logic
+                    if self.retryCount < Self.maxRetries {
+                        self.retryCount += 1
+                        print("[PlayerVM] Retry \(self.retryCount)/\(Self.maxRetries)")
+                        if let url = (item.asset as? AVURLAsset)?.url {
+                            try? await Task.sleep(for: .seconds(1))
+                            await self.startPlayback(url: url)
+                        }
+                    } else {
+                        self.isLoading = false
+                        self.error = item.error?.localizedDescription ?? "Playback failed. The stream may be offline or unsupported."
+                    }
+                default:
+                    break
                 }
             }
         }

@@ -1,3 +1,4 @@
+import StreamArcCore
 import Testing
 import Foundation
 @testable import StreamArc

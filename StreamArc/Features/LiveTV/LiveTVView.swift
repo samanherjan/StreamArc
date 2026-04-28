@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 import Kingfisher
 
@@ -137,7 +138,7 @@ struct LiveTVView: View {
                     }
                     .foregroundStyle(Color.saAccent)
                 }
-                .buttonStyle(.plain)
+                .cardFocusable()
                 .padding(.horizontal)
             }
 
@@ -208,7 +209,7 @@ struct LiveTVView: View {
                     } label: {
                         countryCard(country)
                     }
-                    .buttonStyle(.plain)
+                    .cardFocusable()
                 }
             }
             .padding(.horizontal)
@@ -347,7 +348,7 @@ struct LiveTVView: View {
                             .fill(Color.saCard.opacity(0.5))
                     )
                 }
-                .buttonStyle(.plain)
+                .cardFocusable()
             }
         }
         .padding(.horizontal)
@@ -469,7 +470,7 @@ struct LiveTVView: View {
                                   : Color.saCard.opacity(0.4))
                     )
                 }
-                .buttonStyle(.plain)
+                .cardFocusable()
             }
         }
         .padding(.horizontal)
@@ -585,7 +586,7 @@ struct ChannelTile: View {
             }
             .padding(.vertical, 8)
         }
-        .buttonStyle(.plain)
+        .cardFocusable()
     }
 }
 
@@ -649,6 +650,6 @@ private struct ChannelCardView: View {
                     .fill(isSelected ? Color.saAccent.opacity(0.1) : Color.saCard.opacity(0.6))
             )
         }
-        .buttonStyle(.plain)
+        .cardFocusable()
     }
 }

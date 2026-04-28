@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 
 struct SearchView: View {
@@ -44,7 +45,7 @@ struct SearchView: View {
                                     }
                                 }
                             }
-                            .buttonStyle(.plain)
+                            .cardFocusable()
                             .listRowBackground(Color.clear)
                         }
                         .listStyle(.plain)
@@ -61,12 +62,21 @@ struct SearchView: View {
                            channel: ch, allChannels: viewModel.channels)
             }
         }
+#if os(tvOS)
+        .fullScreenCover(item: $selectedVOD) { vod in
+            MovieDetailView(item: vod)
+        }
+        .fullScreenCover(item: $selectedSeries) { series in
+            SeriesDetailView(series: series)
+        }
+#else
         .sheet(item: $selectedVOD) { vod in
             MovieDetailView(item: vod)
         }
         .sheet(item: $selectedSeries) { series in
             SeriesDetailView(series: series)
         }
+#endif
     }
 
     private func handleTap(_ result: SearchViewModel.SearchResult) {

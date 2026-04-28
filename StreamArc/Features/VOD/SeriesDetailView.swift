@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 import Kingfisher
 import SwiftData
@@ -126,7 +127,7 @@ struct SeriesDetailView: View {
                                     .background(Color.saSurface)
                                     .clipShape(Circle())
                             }
-                            .buttonStyle(.plain)
+                            .cardFocusable()
                         }
 
                         // Overview
@@ -168,7 +169,9 @@ struct SeriesDetailView: View {
                 .padding(.vertical)
             }
             .background(Color.saBackground)
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -276,7 +279,7 @@ struct SeriesDetailView: View {
                                 .background(Color.saSurface)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                             }
-                            .buttonStyle(.plain)
+                            .cardFocusable()
                         }
                     }
                     .padding(.horizontal)

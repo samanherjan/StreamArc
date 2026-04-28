@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 import SwiftData
 import Kingfisher
@@ -137,7 +138,9 @@ struct SettingsView: View {
                 }
                 #endif
             }
+            #if !os(tvOS)
             .scrollContentBackground(.hidden)
+            #endif
             .background(Color.saBackground)
             .navigationTitle("Settings")
             .paywallSheet(isPresented: $showPaywall)

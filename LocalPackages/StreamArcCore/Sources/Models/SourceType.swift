@@ -6,7 +6,7 @@ public enum SourceType: String, CaseIterable, Codable, Sendable {
     case xtream   = "Xtream Codes"
     case enigma2  = "Enigma2 / E2"
 
-    var systemImage: String {
+    public var systemImage: String {
         switch self {
         case .m3u:     return "doc.text"
         case .stalker: return "tv.and.mediabox"
@@ -15,7 +15,7 @@ public enum SourceType: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    var isPremiumRequired: Bool {
+    public var isPremiumRequired: Bool {
         self == .enigma2
     }
 }

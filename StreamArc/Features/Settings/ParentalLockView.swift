@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 
 struct ParentalLockView: View {
@@ -52,10 +53,14 @@ struct ParentalLockView: View {
                         .foregroundStyle(Color.saTextSecondary)
                 }
             }
+            #if !os(tvOS)
             .scrollContentBackground(.hidden)
+            #endif
             .background(Color.saBackground)
             .navigationTitle("Parental Lock")
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

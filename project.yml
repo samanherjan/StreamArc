@@ -6,6 +6,9 @@ options:
   generateEmptyDirectories: false
   defaultConfig: Debug
 
+localPackages:
+  - path: LocalPackages/StreamArcCore
+
 packages:
   Kingfisher:
     url: https://github.com/onevcat/Kingfisher
@@ -13,13 +16,6 @@ packages:
   GoogleMobileAds:
     url: https://github.com/googleads/swift-package-manager-google-mobile-ads
     from: "11.0.0"
-  AppLovinSDK:
-    url: https://github.com/AppLovin/AppLovin-MAX-Swift-Package
-    from: "13.0.0"
-  YouTubePlayerKit:
-    url: https://github.com/SvenTiigi/YouTubePlayerKit
-    from: "1.9.0"
-
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -37,7 +33,8 @@ targets:
     sources:
       - path: StreamArc/App/iOS
       - path: StreamArc/App/Shared
-      - path: StreamArc/Core
+      - path: StreamArc/Core/Models/Profile.swift
+      - path: StreamArc/Core/Storage
       - path: StreamArc/Features
       - path: StreamArc/Shared
       - path: StreamArc/Monetization
@@ -47,8 +44,10 @@ targets:
       - package: Kingfisher
       - package: GoogleMobileAds
         product: GoogleMobileAds
-      - package: YouTubePlayerKit
-    settings:        INFOPLIST_FILE: StreamArc/App/iOS/Info.plist
+      - package: StreamArcCore
+    settings:
+      base:
+        INFOPLIST_FILE: StreamArc/App/iOS/Info.plist
         DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
     info:
       path: StreamArc/App/iOS/Info.plist
@@ -75,7 +74,8 @@ targets:
     sources:
       - path: StreamArc/App/tvOS
       - path: StreamArc/App/Shared
-      - path: StreamArc/Core
+      - path: StreamArc/Core/Models/Profile.swift
+      - path: StreamArc/Core/Storage
       - path: StreamArc/Features
       - path: StreamArc/Shared
       - path: StreamArc/Monetization
@@ -83,9 +83,7 @@ targets:
       - path: StreamArc/Resources
     dependencies:
       - package: Kingfisher
-      - package: AppLovinSDK
-        product: AppLovinSDK
-      - package: YouTubePlayerKit
+      - package: StreamArcCore
     settings:
         INFOPLIST_FILE: StreamArc/App/tvOS/Info.plist
         DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
@@ -103,7 +101,8 @@ targets:
     sources:
       - path: StreamArc/App/macOS
       - path: StreamArc/App/Shared
-      - path: StreamArc/Core
+      - path: StreamArc/Core/Models/Profile.swift
+      - path: StreamArc/Core/Storage
       - path: StreamArc/Features
       - path: StreamArc/Shared
       - path: StreamArc/Monetization
@@ -113,7 +112,7 @@ targets:
       - package: Kingfisher
       - package: GoogleMobileAds
         product: GoogleMobileAds
-      - package: YouTubePlayerKit
+      - package: StreamArcCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.samanherjan.streamarc.macos

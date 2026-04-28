@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 import Kingfisher
 
@@ -61,9 +62,15 @@ struct MoviesView: View {
 #if os(iOS)
             .searchable(text: $localVM.searchText, prompt: "Search movies")
 #endif
+#if os(tvOS)
+            .fullScreenCover(item: $selectedItem) { item in
+                MovieDetailView(item: item)
+            }
+#else
             .sheet(item: $selectedItem) { item in
                 MovieDetailView(item: item)
             }
+#endif
         }
     }
 

@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 import SwiftData
 
@@ -103,10 +104,14 @@ struct AddProfileView: View {
                     }
                 }
             }
+            #if !os(tvOS)
             .scrollContentBackground(.hidden)
+            #endif
             .background(Color.saBackground)
             .navigationTitle("Add Source")
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

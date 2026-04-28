@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 import Kingfisher
 
@@ -124,17 +125,7 @@ struct MovieDetailView: View {
                                     .background(Color.saSurface)
                                     .clipShape(Circle())
                             }
-                            .buttonStyle(.plain)
-
-                            Button { toggleFavorite() } label: {
-                                Image(systemName: isFavorite ? "heart.fill" : "heart")
-                                    .font(.title3)
-                                    .foregroundStyle(isFavorite ? .red : .white)
-                                    .padding(12)
-                                    .background(Color.saSurface)
-                                    .clipShape(Circle())
-                            }
-                            .buttonStyle(.plain)
+                            .cardFocusable()
                         }
 
                         // Overview
@@ -181,7 +172,9 @@ struct MovieDetailView: View {
                 }
             }
             .background(Color.saBackground)
+#if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+#endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

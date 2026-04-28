@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 import SwiftData
 import Kingfisher
@@ -29,7 +30,7 @@ struct ContinueWatchingRow: View {
                             Button { onTap(entry) } label: {
                                 ContinueWatchingCard(entry: entry)
                             }
-                            .buttonStyle(.plain)
+                            .cardFocusable()
                         }
                     }
                     .padding(.horizontal)

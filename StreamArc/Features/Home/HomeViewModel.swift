@@ -1,3 +1,4 @@
+import StreamArcCore
 import Foundation
 import SwiftData
 

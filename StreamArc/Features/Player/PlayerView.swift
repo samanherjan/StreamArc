@@ -1,5 +1,7 @@
+import StreamArcCore
 import SwiftUI
 import AVKit
+import SwiftData
 
 struct PlayerView: View {
 
@@ -13,36 +15,101 @@ struct PlayerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(EntitlementManager.self) private var entitlements
     @Environment(\.modelContext) private var modelContext
+
+    @Query(filter: #Predicate<Profile> { $0.isActive == true })
+    private var activeProfiles: [Profile]
+    private var activeProfile: Profile? { activeProfiles.first }
+
     @State private var showControls = true
     @State private var controlsTimer: Task<Void, Never>?
 
     var body: some View {
+#if os(tvOS)
+        tvPlayerBody
+#else
+        nonTVPlayerBody
+#endif
+    }
+
+    // MARK: - tvOS: Native AVPlayerViewController (Siri Remote, scrubbing, transport)
+
+#if os(tvOS)
+    private var tvPlayerBody: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // AVKit player
             if let player = viewModel.vm.player {
-                VideoPlayer(player: player)
+                AVPlayerViewControllerRepresentable(player: player)
                     .ignoresSafeArea()
-                    .onTapGesture { toggleControls() }
             }
 
-            // Loading indicator
             if viewModel.vm.isLoading {
                 ProgressView()
                     .tint(.white)
                     .scaleEffect(2)
             }
 
-            // Error
+            if let error = viewModel.vm.error {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.red)
+                    Text(error)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 60)
+                    Button("Dismiss") { dismiss() }
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+        .onAppear { load() }
+        .onDisappear { saveWatchProgress(); viewModel.vm.cleanup() }
+        .onMoveCommand { direction in
+            switch direction {
+            case .up:    viewModel.vm.previousChannel()
+            case .down:  viewModel.vm.nextChannel()
+            default:     break
+            }
+        }
+    }
+#endif
+
+    // MARK: - iOS / macOS: Custom overlay
+
+#if !os(tvOS)
+    private var nonTVPlayerBody: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if let player = viewModel.vm.player {
+                VideoPlayer(player: player)
+                    .ignoresSafeArea()
+                    .onTapGesture { toggleControls() }
+            }
+
+            if viewModel.vm.isLoading {
+                ProgressView()
+                    .tint(.white)
+                    .scaleEffect(2)
+            }
+
             if let error = viewModel.vm.error {
                 VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundStyle(.red)
-                    Text(error).foregroundStyle(.white).multilineTextAlignment(.center)
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.largeTitle)
+                        .foregroundStyle(.red)
+                    Text(error)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                    Button("Retry") { load() }
+                        .buttonStyle(.bordered)
+                        .tint(.white)
                 }
             }
 
-            // Controls overlay
             if showControls {
                 playerControls
                     .transition(.opacity)
@@ -52,15 +119,6 @@ struct PlayerView: View {
         .statusBarHidden(true)
         .onAppear { load() }
         .onDisappear { saveWatchProgress(); viewModel.vm.cleanup() }
-#if os(tvOS)
-        .onMoveCommand { direction in
-            switch direction {
-            case .up:    viewModel.vm.previousChannel()
-            case .down:  viewModel.vm.nextChannel()
-            default:     toggleControls()
-            }
-        }
-#endif
     }
 
     // MARK: - Controls
@@ -79,7 +137,7 @@ struct PlayerView: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Spacer()
-#if !os(tvOS)
+
                 // AirPlay
                 AirPlayButton()
                     .frame(width: 44, height: 44)
@@ -94,17 +152,15 @@ struct PlayerView: View {
                             .foregroundStyle(.white)
                     }
                 }
-#endif
             }
             .padding()
             .background(.ultraThinMaterial.opacity(0.7))
 
             Spacer()
 
-            // Bottom controls (VOD seek + channel up/down)
+            // Bottom controls
             VStack(spacing: 12) {
                 if !isLiveTV && viewModel.vm.duration > 0 {
-                    // Seek slider
                     Slider(
                         value: Binding(get: { viewModel.vm.currentTime }, set: { viewModel.vm.seek(to: $0) }),
                         in: 0...max(1, viewModel.vm.duration)
@@ -145,11 +201,15 @@ struct PlayerView: View {
             .background(.ultraThinMaterial.opacity(0.7))
         }
     }
+#endif
 
     // MARK: - Helpers
 
     private func load() {
         guard let url = URL(string: streamURL) else { return }
+        if let profile = activeProfile {
+            viewModel.vm.configureSource(profile: profile)
+        }
         let idx = allChannels.firstIndex(where: { $0.streamURL == streamURL }) ?? 0
         viewModel.vm.setup(url: url, channels: allChannels, currentIndex: idx)
         scheduleHideControls()
@@ -191,11 +251,31 @@ final class PlayerViewModelBridge: ObservableObject {
     let vm = PlayerViewModel()
 }
 
+// MARK: - tvOS AVPlayerViewController wrapper
+
+#if os(tvOS)
+struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
+    let player: AVPlayer
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let vc = AVPlayerViewController()
+        vc.player = player
+        vc.showsPlaybackControls = true
+        vc.allowsPictureInPicturePlayback = false
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+        if uiViewController.player !== player {
+            uiViewController.player = player
+        }
+    }
+}
+#endif
+
 // MARK: - AirPlay button
 
-#if !os(tvOS)
-import AVKit
-
+#if os(iOS)
 struct AirPlayButton: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let v = AVRoutePickerView()
@@ -204,5 +284,14 @@ struct AirPlayButton: UIViewRepresentable {
         return v
     }
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+#elseif os(macOS)
+struct AirPlayButton: NSViewRepresentable {
+    func makeNSView(context: Context) -> AVRoutePickerView {
+        let v = AVRoutePickerView()
+        v.isRoutePickerButtonBordered = false
+        return v
+    }
+    func updateNSView(_ nsView: AVRoutePickerView, context: Context) {}
 }
 #endif

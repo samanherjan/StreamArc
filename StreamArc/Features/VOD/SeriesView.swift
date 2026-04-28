@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 import Kingfisher
 
@@ -78,9 +79,15 @@ struct SeriesView: View {
                 }
             }
         }
+#if os(tvOS)
+        .fullScreenCover(item: $selectedSeries) { s in
+            SeriesDetailView(series: s)
+        }
+#else
         .sheet(item: $selectedSeries) { s in
             SeriesDetailView(series: s)
         }
+#endif
     }
 
     // MARK: - Browse (Netflix-style rows)

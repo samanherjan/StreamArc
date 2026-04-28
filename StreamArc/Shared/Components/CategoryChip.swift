@@ -31,6 +31,6 @@ struct CategoryChip: View {
                 .contentShape(Capsule())
                 .animation(.easeInOut(duration: 0.2), value: isSelected)
         }
-        .buttonStyle(.plain)
+        .cardFocusable()
     }
 }

@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 import SwiftData
 
@@ -24,8 +25,10 @@ struct ProfilesView: View {
                     for i in indexSet { profileToDelete = profiles[i] }
                 }
             }
+            #if !os(tvOS)
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
+            #endif
             .background(Color.saBackground)
             .navigationTitle("Sources")
             .toolbar {

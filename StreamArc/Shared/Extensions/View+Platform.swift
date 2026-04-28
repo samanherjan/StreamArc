@@ -22,13 +22,13 @@ extension View {
 #endif
     }
 
-    /// Standard card-style focus highlight on tvOS; no-op elsewhere.
+    /// Standard card-style focus highlight on tvOS; `.plain` elsewhere.
     @ViewBuilder
     func cardFocusable() -> some View {
 #if os(tvOS)
         self.buttonStyle(.card)
 #else
-        self
+        self.buttonStyle(.plain)
 #endif
     }
 
@@ -50,6 +50,16 @@ extension View {
             PaywallView()
         }
     }
+
+    /// Returns a scaled value for tvOS (10-foot UI needs larger elements).
+    /// On other platforms returns the base value.
+    static func tvScaled(_ base: CGFloat, tvMultiplier: CGFloat = 1.6) -> CGFloat {
+#if os(tvOS)
+        return base * tvMultiplier
+#else
+        return base
+#endif
+    }
 }
 
 // MARK: - Conditional modifiers
@@ -60,3 +70,28 @@ extension View {
         if condition { transform(self) } else { self }
     }
 }
+
+// MARK: - tvOS Focus Scale Effect
+
+#if os(tvOS)
+struct TVFocusScaleModifier: ViewModifier {
+    @Environment(\.isFocused) var isFocused
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isFocused ? 1.05 : 1.0)
+            .shadow(color: isFocused ? Color.saAccent.opacity(0.4) : .clear, radius: 10)
+            .animation(.easeInOut(duration: 0.15), value: isFocused)
+    }
+}
+
+extension View {
+    func tvFocusScale() -> some View {
+        self.modifier(TVFocusScaleModifier())
+    }
+}
+#else
+extension View {
+    func tvFocusScale() -> some View { self }
+}
+#endif

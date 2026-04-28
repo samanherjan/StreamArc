@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 import SwiftData
 

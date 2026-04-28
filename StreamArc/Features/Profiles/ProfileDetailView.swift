@@ -1,3 +1,4 @@
+import StreamArcCore
 import SwiftUI
 
 struct ProfileDetailView: View {
@@ -50,10 +51,14 @@ struct ProfileDetailView: View {
                 }
             }
         }
+        #if !os(tvOS)
         .scrollContentBackground(.hidden)
+        #endif
         .background(Color.saBackground)
         .navigationTitle(profile.name)
+        #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") { save() }
