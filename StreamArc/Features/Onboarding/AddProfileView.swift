@@ -139,6 +139,20 @@ struct AddProfileView: View {
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+
+                if let creds = M3UParser.extractXtreamCredentials(from: m3uURL) {
+                    Button {
+                        xtreamURL = creds.baseURL
+                        xtreamUsername = creds.username
+                        xtreamPassword = creds.password
+                        selectedType = .xtream
+                    } label: {
+                        Label("Xtream Codes detected — tap to use Xtream mode (recommended)", systemImage: "arrow.right.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(Color.saAccent)
+                    }
+                }
+
 #if os(iOS) || os(macOS)
                 Button("Import Local File…") { showFileImporter = true }
                     .tint(Color.saAccent)
@@ -199,9 +213,11 @@ struct AddProfileView: View {
             case .m3u:
                 guard let url = URL(string: m3uURL) else { throw URLError(.badURL) }
                 let result = try await M3UParser.parse(url: url)
-                testResult = result.channels.isEmpty && result.vodItems.isEmpty
-                    ? .failure("No channels found — check URL")
-                    : .success
+                if result.channels.isEmpty && result.vodItems.isEmpty {
+                    testResult = .failure("No channels found — check URL and credentials")
+                } else {
+                    testResult = .success
+                }
             case .stalker:
                 let client = StalkerClient(config: .init(portalURL: portalURL, macAddress: macAddress))
                 try await client.authenticate()
@@ -221,8 +237,22 @@ struct AddProfileView: View {
     }
 
     private func save() {
-        let profile = Profile(name: name, sourceType: selectedType, isActive: profiles.isEmpty)
-        switch selectedType {
+        let hasActive = profiles.contains { $0.isActive }
+
+        // If user pasted an Xtream M3U URL, save as Xtream for reliability
+        let effectiveType: SourceType
+        if selectedType == .m3u,
+           let creds = M3UParser.extractXtreamCredentials(from: m3uURL) {
+            effectiveType = .xtream
+            xtreamURL = creds.baseURL
+            xtreamUsername = creds.username
+            xtreamPassword = creds.password
+        } else {
+            effectiveType = selectedType
+        }
+
+        let profile = Profile(name: name, sourceType: effectiveType, isActive: !hasActive)
+        switch effectiveType {
         case .m3u:
             profile.m3uURL = m3uURL
         case .stalker:

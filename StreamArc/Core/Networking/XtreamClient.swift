@@ -110,6 +110,32 @@ public actor XtreamClient {
         }
     }
 
+    /// Fetch full series detail and return seasons with episodes
+    public func asSeriesSeasons(seriesId: String) async throws -> [Season] {
+        let detail = try await seriesDetail(seriesId: seriesId)
+        var seasonMap: [Int: [Episode]] = [:]
+
+        for (_, episodes) in detail.allEpisodes {
+            for ep in episodes {
+                let streamURL = "\(config.baseURL)/series/\(config.username)/\(config.password)/\(ep.id).\(ep.containerExtension)"
+                let episode = Episode(
+                    id: ep.id,
+                    episodeNumber: ep.episodeNum,
+                    title: ep.title,
+                    streamURL: streamURL
+                )
+                seasonMap[ep.season, default: []].append(episode)
+            }
+        }
+
+        return seasonMap.keys.sorted().map { seasonNum in
+            Season(
+                seasonNumber: seasonNum,
+                episodes: seasonMap[seasonNum]!.sorted { $0.episodeNumber < $1.episodeNumber }
+            )
+        }
+    }
+
     // MARK: - URL builders
 
     private func buildLiveURL(streamId: Int, ext: String) -> String {

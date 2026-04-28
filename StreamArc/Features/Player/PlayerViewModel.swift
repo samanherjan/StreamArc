@@ -106,16 +106,16 @@ final class PlayerViewModel: NSObject {
 
     // MARK: - Audio / subtitle tracks
 
-    func availableAudioOptions() -> [AVMediaSelectionOption] {
-        guard let group = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else {
+    func availableAudioOptions() async -> [AVMediaSelectionOption] {
+        guard let group = try? await player?.currentItem?.asset.loadMediaSelectionGroup(for: .audible) else {
             return []
         }
         return group.options
     }
 
-    func selectAudioOption(_ option: AVMediaSelectionOption) {
+    func selectAudioOption(_ option: AVMediaSelectionOption) async {
         guard let item = player?.currentItem,
-              let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else { return }
+              let group = try? await item.asset.loadMediaSelectionGroup(for: .audible) else { return }
         item.select(option, in: group)
     }
 
@@ -152,7 +152,9 @@ final class PlayerViewModel: NSObject {
     private func observeTime(avPlayer: AVPlayer) {
         let interval = CMTime(seconds: 1, preferredTimescale: 1)
         timeObserver = avPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            self?.currentTime = time.seconds
+            Task { @MainActor in
+                self?.currentTime = time.seconds
+            }
         }
     }
 }

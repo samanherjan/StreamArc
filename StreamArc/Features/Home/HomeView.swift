@@ -22,6 +22,8 @@ struct HomeView: View {
     @Query(filter: #Predicate<Profile> { $0.isActive == true })
     private var activeProfiles: [Profile]
 
+    @Query private var allProfiles: [Profile]
+
     @State private var viewModel = HomeViewModel()
     @State private var selectedTab: Tab = .liveTV
     @State private var showAddProfile = false
@@ -55,30 +57,49 @@ struct HomeView: View {
 
     // MARK: - iOS layout
 
+    #if os(iOS)
     private var iOSLayout: some View {
-        TabView(selection: $selectedTab) {
-            ForEach(Tab.allCases, id: \.self) { tab in
-                tabContent(tab)
-                    .tabItem {
-                        Label(tab.title, systemImage: tab.systemImage)
-                    }
-                    .tag(tab)
+        iOSTabView
+            .tint(Color.saAccent)
+            .streamArcBackground()
+            .onChange(of: selectedTab) { _, _ in
+                interstitialManager.recordTabSwitch()
             }
-        }
-        .tint(Color.saAccent)
-        .streamArcBackground()
-        .onChange(of: selectedTab) { _, _ in
-            interstitialManager.recordTabSwitch()
-        }
-        .task(id: activeProfile?.id) {
-            if let profile = activeProfile {
-                await viewModel.load(profile: profile)
+            .task(id: activeProfile?.id) {
+                if let profile = activeProfile {
+                    await viewModel.load(profile: profile)
+                } else {
+                    viewModel.noActiveProfile()
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var iOSTabView: some View {
+        if #available(iOS 18, *) {
+            TabView(selection: $selectedTab) {
+                ForEach(Tab.allCases, id: \.self) { tab in
+                    tabContent(tab)
+                        .tabItem { Label(tab.title, systemImage: tab.systemImage) }
+                        .tag(tab)
+                }
+            }
+            .tabViewStyle(.tabBarOnly)
+        } else {
+            TabView(selection: $selectedTab) {
+                ForEach(Tab.allCases, id: \.self) { tab in
+                    tabContent(tab)
+                        .tabItem { Label(tab.title, systemImage: tab.systemImage) }
+                        .tag(tab)
+                }
             }
         }
     }
+    #endif
 
     // MARK: - tvOS layout
 
+    #if os(tvOS)
     private var tvLayout: some View {
         TabView(selection: $selectedTab) {
             ForEach(Tab.allCases, id: \.self) { tab in
@@ -90,12 +111,16 @@ struct HomeView: View {
         .task(id: activeProfile?.id) {
             if let profile = activeProfile {
                 await viewModel.load(profile: profile)
+            } else {
+                viewModel.noActiveProfile()
             }
         }
     }
+    #endif
 
     // MARK: - macOS layout
 
+    #if os(macOS)
     private var macLayout: some View {
         NavigationSplitView {
             List(Tab.allCases, id: \.self, selection: $selectedTab) { tab in
@@ -110,9 +135,12 @@ struct HomeView: View {
         .task(id: activeProfile?.id) {
             if let profile = activeProfile {
                 await viewModel.load(profile: profile)
+            } else {
+                viewModel.noActiveProfile()
             }
         }
     }
+    #endif
 
     // MARK: - Tab content
 

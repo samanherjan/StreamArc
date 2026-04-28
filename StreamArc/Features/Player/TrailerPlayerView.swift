@@ -1,44 +1,37 @@
 import SwiftUI
+import YouTubePlayerKit
 
 struct TrailerPlayerView: View {
-    let url: URL
+    let videoId: String
     @Environment(\.dismiss) private var dismiss
+
+    @State private var player: YouTubePlayer
+
+    init(videoId: String) {
+        self.videoId = videoId
+        self._player = State(wrappedValue: YouTubePlayer(
+            source: .video(id: videoId),
+            configuration: .init(
+                autoPlay: true,
+                showControls: true,
+                showFullscreenButton: false,
+                playInline: true,
+                showRelatedVideos: false
+            )
+        ))
+    }
 
     var body: some View {
         NavigationStack {
-#if os(tvOS)
-            // tvOS: play via AVPlayer (YouTube direct won't work, but this handles fallback)
-            Text("Open YouTube for trailer")
-                .foregroundStyle(Color.saTextSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.saBackground)
-#else
-            SafariWebView(url: url)
+            YouTubePlayerView(player)
                 .ignoresSafeArea()
-#endif
-        }
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Done") { dismiss() }
-            }
+                .background(Color.black)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { dismiss() }
+                            .foregroundStyle(.white)
+                    }
+                }
         }
     }
 }
-
-// MARK: - SafariViewController wrapper (iOS/macOS)
-
-#if !os(tvOS)
-import SafariServices
-
-struct SafariWebView: UIViewControllerRepresentable {
-    let url: URL
-
-    func makeUIViewController(context: Context) -> SFSafariViewController {
-        let config = SFSafariViewController.Configuration()
-        config.entersReaderIfAvailable = false
-        return SFSafariViewController(url: url, configuration: config)
-    }
-
-    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
-}
-#endif

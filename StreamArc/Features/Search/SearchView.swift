@@ -24,7 +24,7 @@ struct SearchView: View {
                         series: viewModel.series
                     )
                     if results.isEmpty {
-                        EmptyContentView(title: "No results for "\(searchVM.query)"", subtitle: "")
+                        EmptyContentView(title: "No results for \"\(searchVM.query)\"", subtitle: "")
                     } else {
                         List(results) { result in
                             Button {

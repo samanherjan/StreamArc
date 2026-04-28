@@ -14,6 +14,7 @@ struct StreamArcApp: App {
                 .environment(appEnv.entitlementManager)
                 .environment(appEnv.storeManager)
                 .environment(appEnv.adsManager)
+                .environment(appEnv.interstitialAdManager)
                 .environment(appEnv.settingsStore)
                 .task { await appEnv.onAppear() }
         }

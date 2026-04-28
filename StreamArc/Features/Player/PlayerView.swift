@@ -12,6 +12,7 @@ struct PlayerView: View {
     @StateObject private var viewModel = PlayerViewModelBridge()
     @Environment(\.dismiss) private var dismiss
     @Environment(EntitlementManager.self) private var entitlements
+    @Environment(\.modelContext) private var modelContext
     @State private var showControls = true
     @State private var controlsTimer: Task<Void, Never>?
 
@@ -50,7 +51,7 @@ struct PlayerView: View {
         .animation(.easeInOut(duration: 0.2), value: showControls)
         .statusBarHidden(true)
         .onAppear { load() }
-        .onDisappear { viewModel.vm.cleanup() }
+        .onDisappear { saveWatchProgress(); viewModel.vm.cleanup() }
 #if os(tvOS)
         .onMoveCommand { direction in
             switch direction {
@@ -154,6 +155,20 @@ struct PlayerView: View {
         scheduleHideControls()
     }
 
+    private func saveWatchProgress() {
+        guard !isLiveTV else { return }
+        let contentId = channel?.id ?? streamURL
+        let mgr = WatchHistoryManager(modelContext: modelContext)
+        try? mgr.record(
+            contentId: contentId,
+            contentType: isLiveTV ? "channel" : "vod",
+            title: title,
+            imageURL: nil,
+            position: viewModel.vm.currentTime,
+            duration: viewModel.vm.duration
+        )
+    }
+
     private func toggleControls() {
         withAnimation { showControls.toggle() }
         if showControls { scheduleHideControls() }
@@ -171,6 +186,7 @@ struct PlayerView: View {
 }
 
 // Bridge to use @StateObject with @Observable PlayerViewModel
+@MainActor
 final class PlayerViewModelBridge: ObservableObject {
     let vm = PlayerViewModel()
 }

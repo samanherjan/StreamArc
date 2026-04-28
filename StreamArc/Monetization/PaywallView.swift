@@ -9,6 +9,7 @@ struct PaywallView: View {
 
     @State private var selectedProduct: Product?
     @State private var showSuccessBanner = false
+    @State private var showErrorAlert = false
 
     private let features: [(String, String)] = [
         ("infinity", "Unlimited profiles and channels"),
@@ -63,7 +64,22 @@ struct PaywallView: View {
 
                     // Subscription options
                     if store.products.isEmpty {
-                        ProgressView().tint(.saAccent)
+                        VStack(spacing: 8) {
+                            ProgressView().tint(.saAccent)
+                            if let error = store.purchaseError {
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundStyle(Color.saError)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                                Button("Retry") {
+                                    store.clearError()
+                                    Task { await store.loadProducts() }
+                                }
+                                .font(.caption.bold())
+                                .foregroundStyle(Color.saAccent)
+                            }
+                        }
                     } else {
                         VStack(spacing: 12) {
                             // Monthly
@@ -106,7 +122,7 @@ struct PaywallView: View {
                             if store.isPurchasing {
                                 ProgressView().tint(.white)
                             } else {
-                                Text(selectedProduct == nil ? "Continue" : "Subscribe · \(selectedProduct!.displayPrice)")
+                                Text(ctaLabel)
                                     .font(.headline)
                                     .foregroundStyle(.white)
                             }
@@ -148,6 +164,10 @@ struct PaywallView: View {
         }
         .onAppear {
             selectedProduct = store.yearlyProduct
+            // Ensure products are loaded (fallback if app launch didn't complete)
+            if store.products.isEmpty {
+                Task { await store.loadProducts() }
+            }
         }
         .onChange(of: store.lastPurchaseSuccess) { _, success in
             if success {
@@ -158,13 +178,26 @@ struct PaywallView: View {
                 }
             }
         }
-        .if(store.purchaseError != nil) { view in
-            view.alert("Purchase Failed", isPresented: .constant(true)) {
-                Button("OK") {}
-            } message: {
-                Text(store.purchaseError ?? "")
+        .alert("Purchase Failed", isPresented: $showErrorAlert) {
+            Button("OK") { store.clearError() }
+        } message: {
+            Text(store.purchaseError ?? "An unknown error occurred.")
+        }
+        .onChange(of: store.products) { _, _ in
+            if selectedProduct == nil {
+                selectedProduct = store.yearlyProduct ?? store.products.first
             }
         }
+        .onChange(of: store.purchaseError) { _, newVal in
+            showErrorAlert = newVal != nil
+        }
+    }
+
+    private var ctaLabel: String {
+        if let product = selectedProduct {
+            return "Get Premium · \(product.displayPrice)"
+        }
+        return "Get Premium"
     }
 
     private func purchase(_ product: Product) async {

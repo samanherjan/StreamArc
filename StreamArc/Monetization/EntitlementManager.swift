@@ -11,6 +11,18 @@ final class EntitlementManager {
     private(set) var isPremium: Bool = false
     private(set) var isLifetime: Bool = false
 
+    #if DEBUG
+    /// Debug override — toggle in Settings to test premium features without StoreKit
+    var debugPremiumOverride: Bool {
+        get { UserDefaults.standard.bool(forKey: "debug_premium_override") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "debug_premium_override")
+            isPremium = newValue
+            isLifetime = newValue
+        }
+    }
+    #endif
+
     private static let allProductIDs: Set<String> = [
         "streamarc.premium.monthly",
         "streamarc.premium.yearly",
@@ -18,6 +30,14 @@ final class EntitlementManager {
     ]
 
     func refresh() async {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "debug_premium_override") {
+            isPremium = true
+            isLifetime = true
+            return
+        }
+        #endif
+
         var foundActive = false
         var foundLifetime = false
 

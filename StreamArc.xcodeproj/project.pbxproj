@@ -183,6 +183,15 @@
 		FB214C11C32145874AD0357F /* SeriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD1BA9609D22FA10346F25B /* SeriesView.swift */; };
 		FC54DEB878526EF9BF2D6012 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 882F6D29FCB378F44FA9B5AE /* SettingsView.swift */; };
 		FF0FFCACAD2593B77AD70695 /* EPGParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D8B9B2610D51932DC7794FE /* EPGParser.swift */; };
+		AACC002200CHUNK0IOS00001 /* Array+Chunked.swift in Sources */ = {isa = PBXBuildFile; fileRef = AACC001100CHUNKED0000001 /* Array+Chunked.swift */; };
+		AACC002200CHUNK0TVOS0001 /* Array+Chunked.swift in Sources */ = {isa = PBXBuildFile; fileRef = AACC001100CHUNKED0000001 /* Array+Chunked.swift */; };
+		AACC002200CHUNK0MACOS001 /* Array+Chunked.swift in Sources */ = {isa = PBXBuildFile; fileRef = AACC001100CHUNKED0000001 /* Array+Chunked.swift */; };
+		AADD002200CHIP00IOS00001 /* CategoryChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADD001100CATCHIP0000001 /* CategoryChip.swift */; };
+		AADD002200CHIP00TVOS0001 /* CategoryChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADD001100CATCHIP0000001 /* CategoryChip.swift */; };
+		AADD002200CHIP00MACOS001 /* CategoryChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADD001100CATCHIP0000001 /* CategoryChip.swift */; };
+		AAEE002200CW0000IOS00001 /* ContinueWatchingRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAEE001100CONTWATCH00001 /* ContinueWatchingRow.swift */; };
+		AAEE002200CW0000TVOS0001 /* ContinueWatchingRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAEE001100CONTWATCH00001 /* ContinueWatchingRow.swift */; };
+		AAEE002200CW0000MACOS001 /* ContinueWatchingRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAEE001100CONTWATCH00001 /* ContinueWatchingRow.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -265,6 +274,9 @@
 		F618FC37B1391FD8B7764AE1 /* TrailerButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailerButton.swift; sourceTree = "<group>"; };
 		F62159F639DABC7AE094259C /* VODViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VODViewModel.swift; sourceTree = "<group>"; };
 		FE71EC4C1476CEA34D54B748 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
+		AACC001100CHUNKED0000001 /* Array+Chunked.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StreamArc/Shared/Extensions/Array+Chunked.swift"; sourceTree = SOURCE_ROOT; };
+		AADD001100CATCHIP0000001 /* CategoryChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StreamArc/Shared/Components/CategoryChip.swift"; sourceTree = SOURCE_ROOT; };
+		AAEE001100CONTWATCH00001 /* ContinueWatchingRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StreamArc/Shared/Components/ContinueWatchingRow.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -480,7 +492,8 @@
 			isa = PBXGroup;
 			children = (
 				E4C153D435F8421139EEF461 /* Color+Theme.swift */,
-				593D77117290AC964CAF9448 /* View+Platform.swift */,
+				AACC001100CHUNKED0000001 /* Array+Chunked.swift */,
+								593D77117290AC964CAF9448 /* View+Platform.swift */,
 			);
 			path = Extensions;
 			sourceTree = "<group>";
@@ -624,6 +637,7 @@
 			packageProductDependencies = (
 				579627DB8FD4488353A6BB22 /* Kingfisher */,
 				B12C2B002A73A3FEEDD60FBE /* AppLovinSDK */,
+				AABB0022YTPK00TVOS000001 /* YouTubePlayerKit */,
 			);
 			productName = StreamArc_tvOS;
 			productReference = 2D88ABDE79774F98B8E2B742 /* StreamArc_tvOS.app */;
@@ -645,6 +659,7 @@
 			packageProductDependencies = (
 				9D81502FFF9B0D0E981C9D56 /* Kingfisher */,
 				7EBA75FAAA87D0BD6929CE4F /* GoogleMobileAds */,
+				AABB0022YTPK00IOS0000001 /* YouTubePlayerKit */,
 			);
 			productName = StreamArc;
 			productReference = D3E26D4B6F0814287630F20D /* StreamArc.app */;
@@ -684,6 +699,7 @@
 			packageProductDependencies = (
 				5277D87875DB1A3B45D5B34D /* Kingfisher */,
 				56EC38FC584E81B36488583F /* GoogleMobileAds */,
+				AABB0022YTPK00MACOS00001 /* YouTubePlayerKit */,
 			);
 			productName = StreamArc_macOS;
 			productReference = C6A90FD94689F4F5C91E0AB7 /* StreamArc_macOS.app */;
@@ -713,6 +729,7 @@
 				8683B892DA3C6130E1909678 /* XCRemoteSwiftPackageReference "AppLovin-MAX-Swift-Package" */,
 				6CB234F952C6D14FD9CCE4E8 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
 				0AFBA0F0D6504CE857F4526C /* XCRemoteSwiftPackageReference "Kingfisher" */,
+				AABB0011YOUTUBE00PLAYER01 /* XCRemoteSwiftPackageReference "YouTubePlayerKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9ECBBB1C31C0FFC1D8A3A7D7 /* Products */;
@@ -784,6 +801,9 @@
 				EDF6A482E87437A384020D32 /* Channel.swift in Sources */,
 				6417681C24039C5EAE8C7192 /* ChannelRowView.swift in Sources */,
 				99B5C962892D40D667FA1065 /* Color+Theme.swift in Sources */,
+				AACC002200CHUNK0TVOS0001 /* Array+Chunked.swift in Sources */,
+				AADD002200CHIP00TVOS0001 /* CategoryChip.swift in Sources */,
+				AAEE002200CW0000TVOS0001 /* ContinueWatchingRow.swift in Sources */,
 				A5C5F6B910BD53EEFB984E9E /* EPGGridView.swift in Sources */,
 				FF0FFCACAD2593B77AD70695 /* EPGParser.swift in Sources */,
 				54CCC41025CA67773FAD4927 /* EPGProgram.swift in Sources */,
@@ -843,6 +863,9 @@
 				FA6BC64B01764F9483CD42D0 /* Channel.swift in Sources */,
 				AF68ACC141E74B5A56D27F68 /* ChannelRowView.swift in Sources */,
 				BD0B02F62F2ABD04AA8309A9 /* Color+Theme.swift in Sources */,
+				AACC002200CHUNK0IOS00001 /* Array+Chunked.swift in Sources */,
+				AADD002200CHIP00IOS00001 /* CategoryChip.swift in Sources */,
+				AAEE002200CW0000IOS00001 /* ContinueWatchingRow.swift in Sources */,
 				592FA3FD4BE928B1B20319DA /* EPGGridView.swift in Sources */,
 				3DC69C6B5B9BD01953D2F3DC /* EPGParser.swift in Sources */,
 				6A24B5FB634455EBD58F36F8 /* EPGProgram.swift in Sources */,
@@ -902,6 +925,9 @@
 				68F4BF85C5B48CFD6CF2C98F /* Channel.swift in Sources */,
 				7029FF13F95462CCAE8CF8F3 /* ChannelRowView.swift in Sources */,
 				41F14066DE31A2F65A66CABE /* Color+Theme.swift in Sources */,
+				AACC002200CHUNK0MACOS001 /* Array+Chunked.swift in Sources */,
+				AADD002200CHIP00MACOS001 /* CategoryChip.swift in Sources */,
+				AAEE002200CW0000MACOS001 /* ContinueWatchingRow.swift in Sources */,
 				F1A661EAF60ADEA34F02A118 /* EPGGridView.swift in Sources */,
 				F0BE92370A18A84956886738 /* EPGParser.swift in Sources */,
 				4F394702642DD08CC37FBC5A /* EPGProgram.swift in Sources */,
@@ -1297,6 +1323,14 @@
 				minimumVersion = 13.0.0;
 			};
 		};
+		AABB0011YOUTUBE00PLAYER01 /* XCRemoteSwiftPackageReference "YouTubePlayerKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SvenTiigi/YouTubePlayerKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.9.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1329,6 +1363,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8683B892DA3C6130E1909678 /* XCRemoteSwiftPackageReference "AppLovin-MAX-Swift-Package" */;
 			productName = AppLovinSDK;
+		};
+		AABB0022YTPK00IOS0000001 /* YouTubePlayerKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AABB0011YOUTUBE00PLAYER01 /* XCRemoteSwiftPackageReference "YouTubePlayerKit" */;
+			productName = YouTubePlayerKit;
+		};
+		AABB0022YTPK00TVOS000001 /* YouTubePlayerKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AABB0011YOUTUBE00PLAYER01 /* XCRemoteSwiftPackageReference "YouTubePlayerKit" */;
+			productName = YouTubePlayerKit;
+		};
+		AABB0022YTPK00MACOS00001 /* YouTubePlayerKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AABB0011YOUTUBE00PLAYER01 /* XCRemoteSwiftPackageReference "YouTubePlayerKit" */;
+			productName = YouTubePlayerKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

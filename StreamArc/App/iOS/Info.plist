@@ -24,6 +24,11 @@
 	<string>ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>StreamArc uses this to show you relevant ads. Upgrade to StreamArc+ to remove all ads.</string>
 	<key>SKAdNetworkItems</key>

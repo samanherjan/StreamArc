@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum LoadState {
+enum LoadState: Equatable {
     case idle, loading, loaded, error(String)
 }
 
@@ -20,6 +20,10 @@ final class HomeViewModel {
     private static let epgCacheTTL: TimeInterval = 43_200  // 12 hours
 
     // MARK: - Load
+
+    func noActiveProfile() {
+        loadState = .error("No active source. Go to Settings → Manage Sources and tap \"Use\" on a source.")
+    }
 
     func load(profile: Profile) async {
         guard loadState != .loading else { return }
@@ -40,9 +44,10 @@ final class HomeViewModel {
             case .enigma2:
                 try await loadEnigma2(profile: profile)
             }
+            // Show content immediately — EPG loads in background
+            loadState = .loaded
             await loadEPG(profile: profile)
             applyEPG()
-            loadState = .loaded
         } catch {
             loadState = .error(error.localizedDescription)
         }
@@ -75,7 +80,64 @@ final class HomeViewModel {
               let mac    = profile.macAddress else { throw URLError(.badURL) }
         let client = StalkerClient(config: .init(portalURL: portal, macAddress: mac))
         try await client.authenticate()
+
+        // Load channels first (fastest, shows UI immediately)
         channels = try await client.channels()
+
+        // Then load VOD and series — don't fail the whole load if these timeout
+        vodItems = (try? await loadStalkerVOD(client: client)) ?? []
+        series   = (try? await loadStalkerSeries(client: client)) ?? []
+    }
+
+    /// Fetch VOD items with throttled concurrency (max 3 at a time)
+    private func loadStalkerVOD(client: StalkerClient) async throws -> [VODItem] {
+        let categories = try await client.vodCategories()
+        var allVOD: [VODItem] = []
+
+        // Process in batches of 3 to avoid overwhelming the portal
+        for batch in categories.chunked(into: 3) {
+            try await withThrowingTaskGroup(of: [VODItem].self) { group in
+                for cat in batch {
+                    group.addTask {
+                        let items = try await client.vodItems(categoryId: cat.id)
+                        return items.map { item -> VODItem in
+                            var v = item
+                            v.groupTitle = cat.title
+                            return v
+                        }
+                    }
+                }
+                for try await items in group {
+                    allVOD.append(contentsOf: items)
+                }
+            }
+        }
+        return allVOD
+    }
+
+    /// Fetch series items with throttled concurrency (max 3 at a time)
+    private func loadStalkerSeries(client: StalkerClient) async throws -> [Series] {
+        let categories = try await client.seriesCategories()
+        var all: [Series] = []
+
+        for batch in categories.chunked(into: 3) {
+            try await withThrowingTaskGroup(of: [Series].self) { group in
+                for cat in batch {
+                    group.addTask {
+                        let items = try await client.seriesItems(categoryId: cat.id)
+                        return items.map { item -> Series in
+                            var s = item
+                            s.groupTitle = cat.title
+                            return s
+                        }
+                    }
+                }
+                for try await items in group {
+                    all.append(contentsOf: items)
+                }
+            }
+        }
+        return all
     }
 
     private func loadEnigma2(profile: Profile) async throws {

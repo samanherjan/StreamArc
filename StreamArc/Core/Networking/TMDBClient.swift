@@ -11,6 +11,7 @@ public actor TMDBClient {
     private let session: URLSession
     private var videoCache: [Int: [TMDBVideo]] = [:]
     private var searchCache: [String: Int] = [:]    // "title_year" → tmdbId
+    private var detailCache: [Int: TMDBDetail] = [:]
 
     public init(session: URLSession = .shared) {
         self.session = session
@@ -88,6 +89,63 @@ public actor TMDBClient {
         }
     }
 
+    // MARK: - Details
+
+    public func movieDetail(tmdbId: Int, apiKey: String) async throws -> TMDBDetail {
+        if let cached = detailCache[tmdbId] { return cached }
+        let url = URL(string: "\(baseURL)/movie/\(tmdbId)?api_key=\(apiKey)")!
+        let detail: TMDBDetail = try await decode(from: url)
+        detailCache[tmdbId] = detail
+        return detail
+    }
+
+    public func tvDetail(tmdbId: Int, apiKey: String) async throws -> TMDBDetail {
+        if let cached = detailCache[tmdbId] { return cached }
+        let url = URL(string: "\(baseURL)/tv/\(tmdbId)?api_key=\(apiKey)")!
+        let detail: TMDBDetail = try await decode(from: url)
+        detailCache[tmdbId] = detail
+        return detail
+    }
+
+    /// Convenience: fetch detail for a VODItem (searches if needed)
+    public func fetchDetail(for item: VODItem, apiKey: String) async -> TMDBDetail? {
+        guard !apiKey.isEmpty else { return nil }
+        do {
+            let mediaType: TMDBMediaType = item.type == .series ? .tv : .movie
+            let id: Int?
+            if let existing = item.tmdbId {
+                id = existing
+            } else {
+                id = item.type == .series
+                    ? try await searchTV(title: item.title, apiKey: apiKey)
+                    : try await searchMovie(title: item.title, year: item.year, apiKey: apiKey)
+            }
+            guard let tmdbId = id else { return nil }
+            return mediaType == .tv
+                ? try await tvDetail(tmdbId: tmdbId, apiKey: apiKey)
+                : try await movieDetail(tmdbId: tmdbId, apiKey: apiKey)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Convenience: fetch detail for a Series
+    public func fetchDetail(forSeries series: Series, apiKey: String) async -> TMDBDetail? {
+        guard !apiKey.isEmpty else { return nil }
+        do {
+            let id: Int?
+            if let existing = series.tmdbId {
+                id = existing
+            } else {
+                id = try await searchTV(title: series.title, apiKey: apiKey)
+            }
+            guard let tmdbId = id else { return nil }
+            return try await tvDetail(tmdbId: tmdbId, apiKey: apiKey)
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: - Networking
 
     private func decode<T: Decodable>(from url: URL) async throws -> T {
@@ -118,5 +176,37 @@ public struct TMDBVideo: Decodable, Sendable {
     public let key: String
     public let site: String
     public let type: String
+    public let name: String
+}
+
+public struct TMDBDetail: Decodable, Sendable {
+    public let id: Int
+    public let overview: String?
+    public let voteAverage: Double?
+    public let releaseDate: String?      // movie
+    public let firstAirDate: String?     // tv
+    public let genres: [TMDBGenre]?
+    public let runtime: Int?             // movie
+    public let numberOfSeasons: Int?     // tv
+    public let tagline: String?
+    public let status: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, overview, genres, runtime, tagline, status
+        case voteAverage = "vote_average"
+        case releaseDate = "release_date"
+        case firstAirDate = "first_air_date"
+        case numberOfSeasons = "number_of_seasons"
+    }
+
+    public var yearString: String? {
+        let date = releaseDate ?? firstAirDate
+        guard let date, date.count >= 4 else { return nil }
+        return String(date.prefix(4))
+    }
+}
+
+public struct TMDBGenre: Decodable, Sendable {
+    public let id: Int
     public let name: String
 }

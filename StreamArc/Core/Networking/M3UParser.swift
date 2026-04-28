@@ -15,21 +15,77 @@ public struct M3UParser {
         }
     }
 
+    public enum M3UError: Error, LocalizedError {
+        case httpError(statusCode: Int)
+        case emptyResponse
+        case notM3U
+        case xtreamDetected(baseURL: String, username: String, password: String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .httpError(let code):
+                return "Server returned HTTP \(code) — the URL may be invalid or credentials expired"
+            case .emptyResponse:
+                return "Server returned an empty response — check the URL and credentials"
+            case .notM3U:
+                return "Response is not a valid M3U playlist — check the URL format"
+            case .xtreamDetected:
+                return "This is an Xtream Codes URL — use the Xtream source type instead"
+            }
+        }
+    }
+
+    /// Extracts Xtream Codes credentials from M3U-style URLs.
+    /// e.g. http://host:port/get.php?username=X&password=Y&type=m3u_plus → (baseURL, user, pass)
+    public struct XtreamCredentials: Sendable {
+        public let baseURL: String
+        public let username: String
+        public let password: String
+    }
+
+    public static func extractXtreamCredentials(from urlString: String) -> XtreamCredentials? {
+        guard let url = URL(string: urlString),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let items = components.queryItems else { return nil }
+
+        let username = items.first(where: { $0.name == "username" })?.value
+        let password = items.first(where: { $0.name == "password" })?.value
+
+        guard let username, !username.isEmpty,
+              let password, !password.isEmpty else { return nil }
+
+        // Build base URL: scheme + host + port
+        var base = "\(url.scheme ?? "http")://\(url.host ?? "")"
+        if let port = url.port, port != 80 && port != 443 {
+            base += ":\(port)"
+        }
+
+        return XtreamCredentials(baseURL: base, username: username, password: password)
+    }
+
     private static let vodKeywords: Set<String> = ["movie", "vod", "film", "series", "show", "episode", "films"]
 
     // MARK: - Public API
 
     public static func parse(content: String) -> ParseResult {
         var result = ParseResult()
-        let lines = content.components(separatedBy: .newlines)
 
-        guard lines.first?.trimmingCharacters(in: .whitespaces).hasPrefix("#EXTM3U") == true else {
+        // Strip BOM if present
+        var cleaned = content
+        if cleaned.hasPrefix("\u{FEFF}") {
+            cleaned = String(cleaned.dropFirst())
+        }
+
+        let lines = cleaned.components(separatedBy: .newlines)
+
+        guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#EXTM3U") == true else {
             return result
         }
 
+        // ...existing parsing logic...
         var idx = 1
         while idx < lines.count {
-            let line = lines[idx].trimmingCharacters(in: .whitespaces)
+            let line = lines[idx].trimmingCharacters(in: .whitespacesAndNewlines)
 
             if line.hasPrefix("#EXTINF:") {
                 let (url, nextIdx) = nextStreamURL(in: lines, from: idx + 1)
@@ -74,10 +130,79 @@ public struct M3UParser {
         if url.isFileURL {
             content = try String(contentsOf: url, encoding: .utf8)
         } else {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            content = String(decoding: data, as: UTF8.self)
+            var request = URLRequest(url: url, timeoutInterval: 30)
+            // Some IPTV providers block default User-Agent
+            request.setValue(
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+                forHTTPHeaderField: "User-Agent"
+            )
+
+            let cfg = URLSessionConfiguration.default
+            cfg.timeoutIntervalForRequest = 30
+            cfg.timeoutIntervalForResource = 300   // large playlists
+            let session = URLSession(configuration: cfg)
+
+            let (data, response) = try await session.data(for: request)
+
+            // Check HTTP status
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                // If this looks like an Xtream URL, try the Xtream API as fallback
+                if let creds = extractXtreamCredentials(from: url.absoluteString) {
+                    return try await fallbackToXtream(creds: creds)
+                }
+                throw M3UError.httpError(statusCode: http.statusCode)
+            }
+
+            guard !data.isEmpty else {
+                // If this looks like an Xtream URL, try the Xtream API as fallback
+                if let creds = extractXtreamCredentials(from: url.absoluteString) {
+                    return try await fallbackToXtream(creds: creds)
+                }
+                throw M3UError.emptyResponse
+            }
+
+            // Try UTF-8 first, fall back to Latin-1
+            if let str = String(data: data, encoding: .utf8) {
+                content = str
+            } else if let str = String(data: data, encoding: .isoLatin1) {
+                content = str
+            } else {
+                content = String(decoding: data, as: UTF8.self)
+            }
         }
-        return parse(content: content)
+
+        let result = parse(content: content)
+
+        // If parsing returned nothing but we got data, the format may be wrong
+        if result.channels.isEmpty && result.vodItems.isEmpty && !content.isEmpty {
+            // Check if it looked like an M3U at all
+            let trimmed = content.replacingOccurrences(of: "\u{FEFF}", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.hasPrefix("#EXTM3U") {
+                // Try Xtream fallback before giving up
+                if let creds = extractXtreamCredentials(from: url.absoluteString) {
+                    return try await fallbackToXtream(creds: creds)
+                }
+                throw M3UError.notM3U
+            }
+        }
+
+        return result
+    }
+
+    /// Falls back to using the Xtream Codes API when the M3U endpoint is blocked.
+    private static func fallbackToXtream(creds: XtreamCredentials) async throws -> ParseResult {
+        let client = XtreamClient(config: .init(
+            baseURL: creds.baseURL,
+            username: creds.username,
+            password: creds.password
+        ))
+        async let channels = client.asChannels()
+        async let vodItems = client.asVODItems()
+        return ParseResult(
+            channels: (try? await channels) ?? [],
+            vodItems: (try? await vodItems) ?? []
+        )
     }
 
     // MARK: - Private helpers
@@ -85,7 +210,7 @@ public struct M3UParser {
     private static func nextStreamURL(in lines: [String], from start: Int) -> (String?, Int) {
         var i = start
         while i < lines.count {
-            let l = lines[i].trimmingCharacters(in: .whitespaces)
+            let l = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
             if l.isEmpty || l.hasPrefix("#EXTINF") {
                 break
             }
@@ -97,9 +222,9 @@ public struct M3UParser {
         return (nil, i)
     }
 
+    // ...existing extractAttributes, extractTitle, isVOD unchanged...
     private static func extractAttributes(from extinf: String) -> [String: String] {
         var result: [String: String] = [:]
-        // Matches:  key="value"
         let pattern = #"([\w-]+)="([^"]*)""#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return result }
         let range = NSRange(extinf.startIndex..., in: extinf)

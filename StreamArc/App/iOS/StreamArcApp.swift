@@ -14,6 +14,7 @@ struct StreamArcApp: App {
                 .environment(appEnv.entitlementManager)
                 .environment(appEnv.storeManager)
                 .environment(appEnv.adsManager)
+                .environment(appEnv.interstitialAdManager)
                 .environment(appEnv.settingsStore)
                 .preferredColorScheme(appEnv.settingsStore.colorScheme)
                 .task { await appEnv.onAppear() }

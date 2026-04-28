@@ -42,12 +42,14 @@ public struct EPGParser {
                 throw EPGError.decompressionFailed
             }
             defer { inflateEnd(&stream) }
-            var status: Int32
+            var status: Int32 = Z_OK
             repeat {
-                stream.next_out = &buffer
-                stream.avail_out = uInt(bufferSize)
-                status = inflate(&stream, Z_SYNC_FLUSH)
-                let produced = bufferSize - Int(stream.avail_out)
+                let produced: Int = buffer.withUnsafeMutableBufferPointer { ptr in
+                    stream.next_out = ptr.baseAddress
+                    stream.avail_out = uInt(bufferSize)
+                    status = inflate(&stream, Z_SYNC_FLUSH)
+                    return bufferSize - Int(stream.avail_out)
+                }
                 decompressed.append(contentsOf: buffer.prefix(produced))
             } while status == Z_OK
             guard status == Z_STREAM_END else { throw EPGError.decompressionFailed }

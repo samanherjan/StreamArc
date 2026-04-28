@@ -46,7 +46,7 @@ struct ProfilesView: View {
             }
             Button("Cancel", role: .cancel) { profileToDelete = nil }
         } message: {
-            Text("This will remove "\(profileToDelete?.name ?? "")" and its data.")
+            Text("This will remove \"\(profileToDelete?.name ?? "")\" and its data.")
         }
     }
 

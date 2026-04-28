@@ -2,10 +2,15 @@
   "identifier" : "StreamArc",
   "nonConsumableProducts" : [
     {
-      "displayPrice" : "29.99",
+      "displayPrice" : "149.00",
       "familyShareable" : false,
       "internalID" : "lifetime_001",
       "localizations" : [
+        {
+          "description" : "Lås opp alle StreamArc+-funksjoner for alltid – engangsbeløp, ingen abonnement.",
+          "displayName" : "StreamArc+ Lifetime",
+          "locale" : "nb_NO"
+        },
         {
           "description" : "Unlock all StreamArc+ features forever — one-time purchase, no subscription.",
           "displayName" : "StreamArc+ Lifetime",
@@ -17,11 +22,14 @@
       "type" : "NonConsumable"
     }
   ],
+  "nonRenewingSubscriptionProducts" : [
+
+  ],
   "products" : [
 
   ],
   "settings" : {
-    "_storefront" : "USA",
+    "_storefront" : "NOR",
     "_storeKitErrors" : [
       {
         "current" : null,
@@ -45,7 +53,7 @@
       "id" : "streamarc_premium_group",
       "localizations" : [
         {
-          "locale" : "en_US",
+          "locale" : "nb_NO",
           "name" : "StreamArc+"
         }
       ],
@@ -58,18 +66,21 @@
           "codeOffers" : [
 
           ],
-          "displayPrice" : "4.99",
+          "displayPrice" : "49.00",
           "familyShareable" : false,
           "groupNumber" : 1,
           "internalID" : "monthly_001",
           "introductoryOffer" : {
             "duration" : 1,
             "durationUnit" : "WEEK",
-            "offerID" : "monthly_trial",
-            "offerMode" : "FREE_TRIAL",
-            "offerType" : "introductory"
+            "offerMode" : "FREE_TRIAL"
           },
           "localizations" : [
+            {
+              "description" : "Full tilgang til alle StreamArc+-funksjoner, fakturert månedlig. 7 dagers gratis prøveperiode.",
+              "displayName" : "Månedlig",
+              "locale" : "nb_NO"
+            },
             {
               "description" : "Full access to all StreamArc+ features, billed monthly. 7-day free trial.",
               "displayName" : "Monthly",
@@ -77,8 +88,8 @@
             }
           ],
           "productID" : "streamarc.premium.monthly",
-          "referenceName" : "StreamArc+ Monthly",
           "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "StreamArc+ Monthly",
           "type" : "RecurringSubscription"
         },
         {
@@ -88,18 +99,21 @@
           "codeOffers" : [
 
           ],
-          "displayPrice" : "39.99",
+          "displayPrice" : "349.00",
           "familyShareable" : false,
           "groupNumber" : 2,
           "internalID" : "yearly_001",
           "introductoryOffer" : {
             "duration" : 1,
             "durationUnit" : "WEEK",
-            "offerID" : "yearly_trial",
-            "offerMode" : "FREE_TRIAL",
-            "offerType" : "introductory"
+            "offerMode" : "FREE_TRIAL"
           },
           "localizations" : [
+            {
+              "description" : "Full tilgang til alle StreamArc+-funksjoner, fakturert årlig. Beste verdi – 7 dagers gratis prøveperiode.",
+              "displayName" : "Årlig",
+              "locale" : "nb_NO"
+            },
             {
               "description" : "Full access to all StreamArc+ features, billed yearly. Best value — 7-day free trial.",
               "displayName" : "Yearly",
@@ -107,8 +121,8 @@
             }
           ],
           "productID" : "streamarc.premium.yearly",
-          "referenceName" : "StreamArc+ Yearly",
           "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "StreamArc+ Yearly",
           "type" : "RecurringSubscription"
         }
       ]

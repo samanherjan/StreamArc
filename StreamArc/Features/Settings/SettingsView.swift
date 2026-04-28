@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Kingfisher
 
 struct SettingsView: View {
 
@@ -99,10 +100,8 @@ struct SettingsView: View {
                     Button("Clear EPG Cache") { clearEPGCache() }
                         .tint(.red)
                     Button("Clear Image Cache") {
-#if !os(tvOS)
-                        // KingfisherManager.shared.cache.clearMemoryCache()
-                        // KingfisherManager.shared.cache.clearDiskCache()
-#endif
+                        KingfisherManager.shared.cache.clearMemoryCache()
+                        KingfisherManager.shared.cache.clearDiskCache()
                         showCacheClearedAlert = true
                     }
                     .tint(.red)
@@ -124,6 +123,19 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(Color.saTextSecondary)
                 }
+
+                #if DEBUG
+                Section("Developer") {
+                    Toggle("Debug Premium Override", isOn: Binding(
+                        get: { entitlements.debugPremiumOverride },
+                        set: { entitlements.debugPremiumOverride = $0 }
+                    ))
+                    .tint(Color.saAccent)
+                    Text("Enables premium features without a StoreKit purchase. Debug builds only.")
+                        .font(.caption)
+                        .foregroundStyle(Color.saTextSecondary)
+                }
+                #endif
             }
             .scrollContentBackground(.hidden)
             .background(Color.saBackground)

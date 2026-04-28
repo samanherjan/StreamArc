@@ -16,6 +16,9 @@ packages:
   AppLovinSDK:
     url: https://github.com/AppLovin/AppLovin-MAX-Swift-Package
     from: "13.0.0"
+  YouTubePlayerKit:
+    url: https://github.com/SvenTiigi/YouTubePlayerKit
+    from: "1.9.0"
 
 settings:
   base:
@@ -44,10 +47,8 @@ targets:
       - package: Kingfisher
       - package: GoogleMobileAds
         product: GoogleMobileAds
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.samanherjan.streamarc
-        INFOPLIST_FILE: StreamArc/App/iOS/Info.plist
+      - package: YouTubePlayerKit
+    settings:        INFOPLIST_FILE: StreamArc/App/iOS/Info.plist
         DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
     info:
       path: StreamArc/App/iOS/Info.plist
@@ -56,6 +57,8 @@ targets:
         UILaunchScreen:
           UIColorName: ""
         GADApplicationIdentifier: "ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX"
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
         NSUserTrackingUsageDescription: "StreamArc uses this to show you relevant ads. Upgrade to StreamArc+ to remove all ads."
         LSRequiresIPhoneOS: true
         UIApplicationSceneManifest:
@@ -82,13 +85,15 @@ targets:
       - package: Kingfisher
       - package: AppLovinSDK
         product: AppLovinSDK
+      - package: YouTubePlayerKit
     settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.samanherjan.streamarc.tvos
         INFOPLIST_FILE: StreamArc/App/tvOS/Info.plist
         DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
     info:
       path: StreamArc/App/tvOS/Info.plist
+      properties:
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
 
   # ─── macOS ───────────────────────────────────────────────────────
   StreamArc_macOS:
@@ -108,6 +113,7 @@ targets:
       - package: Kingfisher
       - package: GoogleMobileAds
         product: GoogleMobileAds
+      - package: YouTubePlayerKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.samanherjan.streamarc.macos
@@ -118,6 +124,8 @@ targets:
       properties:
         CFBundleDisplayName: StreamArc
         GADApplicationIdentifier: "ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX"
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
         LSApplicationCategoryType: public.app-category.entertainment
         NSPrincipalClass: NSApplication
 

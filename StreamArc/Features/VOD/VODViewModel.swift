@@ -10,16 +10,20 @@ final class VODViewModel {
     private let freeTierVODCap    = 50
     private let freeTierSeriesCap = 0   // Series entirely paywalled for free users
 
-    func filteredMovies(from items: [VODItem], isPremium: Bool) -> [VODItem] {
+    private func cappedMovies(from items: [VODItem], isPremium: Bool) -> [VODItem] {
         let movies = items.filter { $0.type == .movie }
-        let capped = isPremium ? movies : Array(movies.prefix(freeTierVODCap))
-        guard !searchText.isEmpty else {
-            if let group = selectedGroup {
-                return capped.filter { $0.groupTitle == group }
-            }
-            return capped
+        return isPremium ? movies : Array(movies.prefix(freeTierVODCap))
+    }
+
+    func filteredMovies(from items: [VODItem], isPremium: Bool, ignoreGroupFilter: Bool = false) -> [VODItem] {
+        let capped = cappedMovies(from: items, isPremium: isPremium)
+        if !searchText.isEmpty {
+            return capped.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
         }
-        return capped.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+        if !ignoreGroupFilter, let group = selectedGroup {
+            return capped.filter { $0.groupTitle == group }
+        }
+        return capped
     }
 
     func filteredSeries(from items: [Series], isPremium: Bool) -> [Series] {
@@ -28,8 +32,9 @@ final class VODViewModel {
         return items.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
     }
 
-    func groups(from items: [VODItem]) -> [String] {
-        let groups = items.compactMap { $0.groupTitle.isEmpty ? nil : $0.groupTitle }
+    func groups(from items: [VODItem], isPremium: Bool) -> [String] {
+        let capped = cappedMovies(from: items, isPremium: isPremium)
+        let groups = capped.compactMap { $0.groupTitle.isEmpty ? nil : $0.groupTitle }
         return Array(Set(groups)).sorted()
     }
 

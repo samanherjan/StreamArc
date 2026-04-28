@@ -10,6 +10,7 @@ final class AppEnvironment {
     var entitlementManager: EntitlementManager
     var storeManager: StoreManager
     var adsManager: AdsManager
+    var interstitialAdManager: InterstitialAdManager
     var settingsStore: SettingsStore
 
     init() {
@@ -19,12 +20,14 @@ final class AppEnvironment {
         self.entitlementManager = entitlement
         self.storeManager = StoreManager(entitlementManager: entitlement)
         self.adsManager = AdsManager(entitlementManager: entitlement)
+        self.interstitialAdManager = InterstitialAdManager(entitlementManager: entitlement)
     }
 
     func onAppear() async {
         await storeManager.loadProducts()
         await entitlementManager.refresh()
         await adsManager.initialize()
+        interstitialAdManager.preload()
     }
 }
 

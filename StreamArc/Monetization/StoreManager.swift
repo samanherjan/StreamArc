@@ -11,7 +11,7 @@ final class StoreManager {
     private(set) var lastPurchaseSuccess = false
 
     private let entitlementManager: EntitlementManager
-    private var updatesTask: Task<Void, Never>?
+    @ObservationIgnored private var updatesTask: Task<Void, Never>?
 
     private static let productIDs = [
         "streamarc.premium.monthly",
@@ -27,17 +27,28 @@ final class StoreManager {
         updatesTask?.cancel()
     }
 
+    // ...existing code...
+
     // MARK: - Load products
 
     func loadProducts() async {
         do {
+            print("[StoreManager] Loading products: \(Self.productIDs)")
             let loaded = try await Product.products(for: Self.productIDs)
-            // Sort: monthly, yearly, lifetime
+            print("[StoreManager] Loaded \(loaded.count) products: \(loaded.map { $0.id })")
             products = loaded.sorted { a, b in
                 let order = Self.productIDs
                 return (order.firstIndex(of: a.id) ?? 99) < (order.firstIndex(of: b.id) ?? 99)
             }
+            if products.isEmpty {
+                #if targetEnvironment(simulator)
+                purchaseError = "No products found. In Xcode: Product → Scheme → Edit Scheme → Run → Options → StoreKit Configuration → select StreamArc.storekit"
+                #else
+                purchaseError = "No products found. StoreKit testing requires the iOS Simulator, or a configured App Store Connect account."
+                #endif
+            }
         } catch {
+            print("[StoreManager] Failed to load products: \(error)")
             purchaseError = error.localizedDescription
         }
         listenForTransactionUpdates()
@@ -97,6 +108,10 @@ final class StoreManager {
     }
 
     // MARK: - Helpers
+
+    func clearError() {
+        purchaseError = nil
+    }
 
     var monthlyProduct: Product? { products.first(where: { $0.id == "streamarc.premium.monthly" }) }
     var yearlyProduct:  Product? { products.first(where: { $0.id == "streamarc.premium.yearly" }) }
