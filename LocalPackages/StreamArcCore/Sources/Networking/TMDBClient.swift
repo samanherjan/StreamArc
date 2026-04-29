@@ -129,6 +129,10 @@ public actor TMDBClient {
                 title = String(title.dropLast(ext.count))
             }
         }
+        // Remove common portal prefixes (TOP - , NEW - , HOT - , VIP - , etc.)
+        title = title.replacingOccurrences(
+            of: #"^(?:TOP|NEW|HOT|VIP|BEST|HIT|FR|EN|DE|ES|AR|TR|NL)\s*[-:|]\s*"#,
+            with: "", options: [.regularExpression, .caseInsensitive])
         // Remove [bracketed] content
         title = title.replacingOccurrences(of: #"\[.*?\]"#, with: "", options: .regularExpression)
         // Remove (year) or (quality) parentheticals
