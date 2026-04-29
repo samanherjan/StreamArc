@@ -1,24 +1,31 @@
 import StreamArcCore
 import SwiftUI
+import AVKit
+
+#if !os(tvOS)
+import WebKit
+#endif
+
+// MARK: - iOS: WKWebView YouTube embed
 
 #if os(iOS)
-import WebKit
-
 struct TrailerPlayerView: View {
     let videoId: String
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
+        ZStack(alignment: .topTrailing) {
             YouTubeWebPlayer(videoId: videoId)
                 .ignoresSafeArea()
                 .background(Color.black)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
-                            .foregroundStyle(.white)
-                    }
-                }
+
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.white)
+                    .shadow(radius: 4)
+            }
+            .padding()
         }
     }
 }
@@ -30,6 +37,8 @@ private struct YouTubeWebPlayer: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+        config.allowsAirPlayForMediaPlayback = true
+        config.allowsPictureInPictureMediaPlayback = true
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.scrollView.isScrollEnabled = false
         webView.isOpaque = false
@@ -38,29 +47,33 @@ private struct YouTubeWebPlayer: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        webView.loadHTMLString(youtubeHTML(videoId: videoId), baseURL: nil)
+        let baseURL = URL(string: "https://www.youtube.com")
+        webView.loadHTMLString(youtubeEmbedHTML(videoId: videoId), baseURL: baseURL)
     }
 }
 
-#elseif os(macOS)
-import WebKit
+// MARK: - macOS: WKWebView YouTube embed
 
+#elseif os(macOS)
 struct TrailerPlayerView: View {
     let videoId: String
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
+        ZStack(alignment: .topTrailing) {
             YouTubeWebPlayerMac(videoId: videoId)
                 .ignoresSafeArea()
                 .background(Color.black)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
-                            .foregroundStyle(.white)
-                    }
-                }
+
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.white)
+                    .shadow(radius: 4)
+            }
+            .padding()
         }
+        .frame(minWidth: 640, minHeight: 360)
     }
 }
 
@@ -75,53 +88,35 @@ private struct YouTubeWebPlayerMac: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        webView.loadHTMLString(youtubeHTML(videoId: videoId), baseURL: nil)
+        let baseURL = URL(string: "https://www.youtube.com")
+        webView.loadHTMLString(youtubeEmbedHTML(videoId: videoId), baseURL: baseURL)
     }
 }
 
+// MARK: - tvOS: AVPlayer with direct URL from KinoCheck
+
 #else
-// tvOS — WKWebView not available
 struct TrailerPlayerView: View {
     let videoId: String
+    var directURL: URL? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                Image(systemName: "play.rectangle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(Color.saAccent)
-                Text("Watch Trailer on YouTube")
-                    .font(.title3.bold())
-                    .foregroundStyle(Color.saTextPrimary)
-                Text("Trailers open in the YouTube app on Apple TV.")
-                    .font(.body)
-                    .foregroundStyle(Color.saTextSecondary)
-                    .multilineTextAlignment(.center)
-                Button("Open in YouTube") {
-                    if let url = URL(string: "youtube://watch/\(videoId)") {
-                        UIApplication.shared.open(url)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.saAccent)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.saBackground)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
+        if let directURL {
+            VideoPlayer(player: AVPlayer(url: directURL))
+                .ignoresSafeArea()
+                .onExitCommand { dismiss() }
+        } else {
+            // Fallback: use the app's player which handles stream resolution
+            PlayerView(streamURL: "https://www.youtube.com/watch?v=\(videoId)", title: "Trailer")
         }
     }
 }
-
 #endif
 
-// MARK: - Shared HTML template
+// MARK: - Shared YouTube embed HTML
 
-private func youtubeHTML(videoId: String) -> String {
+private func youtubeEmbedHTML(videoId: String) -> String {
     """
     <!DOCTYPE html>
     <html>
@@ -129,13 +124,14 @@ private func youtubeHTML(videoId: String) -> String {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * { margin: 0; padding: 0; }
-        html, body { width: 100%; height: 100%; background: #000; }
+        html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
         iframe { width: 100%; height: 100%; border: none; }
     </style>
     </head>
     <body>
-    <iframe src="https://www.youtube.com/embed/\(videoId)?autoplay=1&playsinline=1&rel=0"
-            allow="autoplay; encrypted-media" allowfullscreen></iframe>
+    <iframe src="https://www.youtube.com/embed/\(videoId)?autoplay=1&playsinline=1&rel=0&modestbranding=1"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowfullscreen></iframe>
     </body>
     </html>
     """
