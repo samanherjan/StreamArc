@@ -9,6 +9,10 @@ final class FavoriteItem {
     var title: String
     var imageURL: String?
     var addedAt: Date
+    /// Whether this channel is pinned in the quick-access bar.
+    var isPinned: Bool
+    /// Sort order within the pin bar (lower = further left).
+    var pinnedOrder: Int
 
     init(contentId: String, contentType: String, title: String, imageURL: String? = nil) {
         self.contentId = contentId
@@ -16,6 +20,8 @@ final class FavoriteItem {
         self.title = title
         self.imageURL = imageURL
         self.addedAt = .now
+        self.isPinned = false
+        self.pinnedOrder = 0
     }
 }
 
@@ -26,6 +32,8 @@ final class FavoritesManager {
 
     // Free-tier cap (11th favorite triggers paywall)
     static let freeTierCap = 10
+    static let freePinCap = 4
+    static let premiumPinCap = 8
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
@@ -72,5 +80,48 @@ final class FavoritesManager {
 
     func totalCount() -> Int {
         (try? modelContext.fetchCount(FetchDescriptor<FavoriteItem>())) ?? 0
+    }
+
+    // MARK: - Pin Bar
+
+    func pinnedItems() throws -> [FavoriteItem] {
+        let desc = FetchDescriptor<FavoriteItem>(
+            predicate: #Predicate { $0.isPinned == true },
+            sortBy: [SortDescriptor(\.pinnedOrder)]
+        )
+        return try modelContext.fetch(desc)
+    }
+
+    func isChannelPinned(contentId: String) -> Bool {
+        let items = try? modelContext.fetch(
+            FetchDescriptor<FavoriteItem>(predicate: #Predicate { $0.contentId == contentId })
+        )
+        return items?.first?.isPinned == true
+    }
+
+    func pinChannel(contentId: String, title: String, imageURL: String?, isPremium: Bool) throws {
+        let cap = isPremium ? Self.premiumPinCap : Self.freePinCap
+        let currentPinCount = (try? pinnedItems())?.count ?? 0
+        guard currentPinCount < cap else { return }
+
+        // Ensure item exists in favorites first
+        if !isFavorite(contentId: contentId) {
+            try addFavorite(contentId: contentId, contentType: "channel", title: title, imageURL: imageURL)
+        }
+        guard let item = try modelContext.fetch(
+            FetchDescriptor<FavoriteItem>(predicate: #Predicate { $0.contentId == contentId })
+        ).first else { return }
+        let maxOrder = (try? pinnedItems())?.last?.pinnedOrder ?? 0
+        item.isPinned = true
+        item.pinnedOrder = maxOrder + 1
+        try modelContext.save()
+    }
+
+    func unpinChannel(contentId: String) throws {
+        guard let item = try modelContext.fetch(
+            FetchDescriptor<FavoriteItem>(predicate: #Predicate { $0.contentId == contentId })
+        ).first else { return }
+        item.isPinned = false
+        try modelContext.save()
     }
 }

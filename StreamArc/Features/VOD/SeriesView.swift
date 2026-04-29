@@ -53,9 +53,7 @@ struct SeriesView: View {
                 }
             }
             .background(Color.saBackground.ignoresSafeArea())
-#if os(iOS)
             .searchable(text: $searchText, prompt: "Search series")
-#endif
         }
         .paywallSheet(isPresented: $showPaywall)
     }
@@ -241,7 +239,7 @@ private struct SeriesHeroView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .cardFocusable()
     }
 }
 
@@ -331,6 +329,6 @@ private struct SeriesPosterCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .buttonStyle(.plain)
+        .cardFocusable()
     }
 }

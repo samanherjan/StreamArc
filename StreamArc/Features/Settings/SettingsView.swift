@@ -152,8 +152,10 @@ struct SettingsView: View {
     }
 
     private func clearEPGCache() {
-        // EPG cache is in-memory on HomeViewModel; signal refresh on next load
-        showCacheClearedAlert = true
+        Task {
+            await EPGCacheManager.shared.clearAll()
+            showCacheClearedAlert = true
+        }
     }
 
     private var appVersion: String {

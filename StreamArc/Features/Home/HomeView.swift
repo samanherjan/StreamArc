@@ -140,6 +140,11 @@ struct HomeView: View {
                 viewModel.noActiveProfile()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .switchToTab)) { notification in
+            if let tab = notification.object as? Tab {
+                selectedTab = tab
+            }
+        }
     }
     #endif
 

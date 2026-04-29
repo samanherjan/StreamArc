@@ -10,6 +10,8 @@ struct PlayerView: View {
     var isLiveTV: Bool = false
     var channel: Channel? = nil
     var allChannels: [Channel] = []
+    /// Resume position in seconds; 0 = start from beginning.
+    var startPosition: Double = 0
 
     @StateObject private var viewModel = PlayerViewModelBridge()
     @Environment(\.dismiss) private var dismiss
@@ -22,6 +24,7 @@ struct PlayerView: View {
 
     @State private var showControls = true
     @State private var controlsTimer: Task<Void, Never>?
+    @State private var showTrackPicker = false
 
     var body: some View {
 #if os(tvOS)
@@ -43,10 +46,17 @@ struct PlayerView: View {
                     .ignoresSafeArea()
             }
 
-            if viewModel.vm.isLoading {
-                ProgressView()
-                    .tint(.white)
-                    .scaleEffect(2)
+            if viewModel.vm.isLoading || viewModel.vm.isBuffering {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(2)
+                    if viewModel.vm.isBuffering {
+                        Text("Buffering…")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
             }
 
             if let error = viewModel.vm.error {
@@ -89,10 +99,17 @@ struct PlayerView: View {
                     .onTapGesture { toggleControls() }
             }
 
-            if viewModel.vm.isLoading {
-                ProgressView()
-                    .tint(.white)
-                    .scaleEffect(2)
+            if viewModel.vm.isLoading || viewModel.vm.isBuffering {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(2)
+                    if viewModel.vm.isBuffering {
+                        Text("Buffering…")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
             }
 
             if let error = viewModel.vm.error {
@@ -138,6 +155,16 @@ struct PlayerView: View {
                     .lineLimit(1)
                 Spacer()
 
+                // Track picker (audio/subtitles)
+                Button {
+                    showTrackPicker = true
+                    controlsTimer?.cancel()
+                } label: {
+                    Image(systemName: "waveform")
+                        .font(.title3)
+                        .foregroundStyle(.white)
+                }
+
                 // AirPlay
                 AirPlayButton()
                     .frame(width: 44, height: 44)
@@ -158,15 +185,61 @@ struct PlayerView: View {
 
             Spacer()
 
+            // EPG info strip (live TV only)
+            if isLiveTV, let prog = channel?.currentProgram ?? viewModel.vm.currentLiveChannel?.currentProgram {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(prog.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        if let desc = prog.description, !desc.isEmpty {
+                            Text(desc)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(2)
+                        }
+                    }
+                    Spacer()
+                    // Program progress
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text(timeRangeString(start: prog.startDate, end: prog.endDate))
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.7))
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.white.opacity(0.3)).frame(height: 3)
+                                Capsule().fill(Color.saAccent)
+                                    .frame(width: geo.size.width * prog.progress, height: 3)
+                            }
+                        }
+                        .frame(width: 80, height: 3)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial.opacity(0.5))
+            }
+
             // Bottom controls
             VStack(spacing: 12) {
                 if !isLiveTV && viewModel.vm.duration > 0 {
-                    Slider(
-                        value: Binding(get: { viewModel.vm.currentTime }, set: { viewModel.vm.seek(to: $0) }),
-                        in: 0...max(1, viewModel.vm.duration)
-                    )
-                    .tint(Color.saAccent)
-                    .padding(.horizontal)
+                    VStack(spacing: 4) {
+                        Slider(
+                            value: Binding(get: { viewModel.vm.currentTime }, set: { viewModel.vm.seek(to: $0) }),
+                            in: 0...max(1, viewModel.vm.duration)
+                        )
+                        .tint(Color.saAccent)
+                        .padding(.horizontal)
+                        HStack {
+                            Text(formatTime(viewModel.vm.currentTime))
+                            Spacer()
+                            Text(formatTime(viewModel.vm.duration))
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .padding(.horizontal)
+                    }
                 }
 
                 HStack(spacing: 32) {
@@ -200,6 +273,29 @@ struct PlayerView: View {
             .padding()
             .background(.ultraThinMaterial.opacity(0.7))
         }
+        .sheet(isPresented: $showTrackPicker) {
+            TrackPickerSheet(playerVM: viewModel.vm) {
+                showTrackPicker = false
+                scheduleHideControls()
+            }
+        }
+    }
+
+    private func timeRangeString(start: Date, end: Date) -> String {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        return "\(f.string(from: start)) – \(f.string(from: end))"
+    }
+
+    private func formatTime(_ seconds: Double) -> String {
+        guard seconds.isFinite else { return "0:00" }
+        let s = Int(seconds)
+        let m = s / 60
+        let h = m / 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m % 60, s % 60)
+        }
+        return String(format: "%d:%02d", m, s % 60)
     }
 #endif
 
@@ -211,6 +307,7 @@ struct PlayerView: View {
             viewModel.vm.configureSource(profile: profile)
         }
         let idx = allChannels.firstIndex(where: { $0.streamURL == streamURL }) ?? 0
+        viewModel.vm.pendingSeekPosition = startPosition
         viewModel.vm.setup(url: url, channels: allChannels, currentIndex: idx)
         scheduleHideControls()
     }
@@ -268,6 +365,90 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
         if uiViewController.player !== player {
             uiViewController.player = player
+        }
+    }
+}
+#endif
+
+// MARK: - Track Picker Sheet (Audio & Subtitles)
+
+#if !os(tvOS)
+struct TrackPickerSheet: View {
+    let playerVM: PlayerViewModel
+    var onDismiss: () -> Void
+
+    @State private var audioOptions: [AVMediaSelectionOption] = []
+    @State private var subtitleOptions: [AVMediaSelectionOption] = []
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if !audioOptions.isEmpty {
+                    Section("Audio") {
+                        ForEach(audioOptions, id: \.displayName) { option in
+                            Button {
+                                Task { await playerVM.selectAudioOption(option) }
+                                onDismiss()
+                            } label: {
+                                HStack {
+                                    Text(option.displayName)
+                                        .foregroundStyle(Color.saTextPrimary)
+                                    Spacer()
+                                    if let lang = option.extendedLanguageTag {
+                                        Text(lang.uppercased())
+                                            .font(.caption)
+                                            .foregroundStyle(Color.saTextSecondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !subtitleOptions.isEmpty {
+                    Section("Subtitles") {
+                        ForEach(subtitleOptions, id: \.displayName) { option in
+                            Button {
+                                Task { await playerVM.selectSubtitleOption(option) }
+                                onDismiss()
+                            } label: {
+                                HStack {
+                                    Text(option.displayName)
+                                        .foregroundStyle(Color.saTextPrimary)
+                                    Spacer()
+                                    if let lang = option.extendedLanguageTag {
+                                        Text(lang.uppercased())
+                                            .font(.caption)
+                                            .foregroundStyle(Color.saTextSecondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if audioOptions.isEmpty && subtitleOptions.isEmpty {
+                    Section {
+                        Text("No alternate audio or subtitle tracks available for this stream.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.saTextSecondary)
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Color.saBackground)
+            .navigationTitle("Audio & Subtitles")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: onDismiss)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .task {
+            audioOptions = await playerVM.availableAudioOptions()
+            subtitleOptions = await playerVM.availableSubtitleOptions()
         }
     }
 }

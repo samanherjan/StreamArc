@@ -6,22 +6,24 @@ options:
   generateEmptyDirectories: false
   defaultConfig: Debug
 
-localPackages:
-  - path: LocalPackages/StreamArcCore
-
 packages:
+  StreamArcCore:
+    path: LocalPackages/StreamArcCore
   Kingfisher:
     url: https://github.com/onevcat/Kingfisher
     from: "8.0.0"
   GoogleMobileAds:
     url: https://github.com/googleads/swift-package-manager-google-mobile-ads
     from: "11.0.0"
+
 settings:
   base:
     SWIFT_VERSION: "6.0"
     DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
     ENABLE_BITCODE: NO
     SWIFT_STRICT_CONCURRENCY: targeted
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
 
 targets:
 
@@ -33,18 +35,17 @@ targets:
     sources:
       - path: StreamArc/App/iOS
       - path: StreamArc/App/Shared
-      - path: StreamArc/Core/Models/Profile.swift
-      - path: StreamArc/Core/Storage
+      - path: StreamArc/Core
       - path: StreamArc/Features
       - path: StreamArc/Shared
       - path: StreamArc/Monetization
       - path: StreamArc/Ads
       - path: StreamArc/Resources
     dependencies:
+      - package: StreamArcCore
       - package: Kingfisher
       - package: GoogleMobileAds
         product: GoogleMobileAds
-      - package: StreamArcCore
     settings:
       base:
         INFOPLIST_FILE: StreamArc/App/iOS/Info.plist
@@ -74,17 +75,17 @@ targets:
     sources:
       - path: StreamArc/App/tvOS
       - path: StreamArc/App/Shared
-      - path: StreamArc/Core/Models/Profile.swift
-      - path: StreamArc/Core/Storage
+      - path: StreamArc/Core
       - path: StreamArc/Features
       - path: StreamArc/Shared
       - path: StreamArc/Monetization
       - path: StreamArc/Ads
       - path: StreamArc/Resources
     dependencies:
-      - package: Kingfisher
       - package: StreamArcCore
+      - package: Kingfisher
     settings:
+      base:
         INFOPLIST_FILE: StreamArc/App/tvOS/Info.plist
         DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
     info:
@@ -101,18 +102,15 @@ targets:
     sources:
       - path: StreamArc/App/macOS
       - path: StreamArc/App/Shared
-      - path: StreamArc/Core/Models/Profile.swift
-      - path: StreamArc/Core/Storage
+      - path: StreamArc/Core
       - path: StreamArc/Features
       - path: StreamArc/Shared
       - path: StreamArc/Monetization
       - path: StreamArc/Ads
       - path: StreamArc/Resources
     dependencies:
-      - package: Kingfisher
-      - package: GoogleMobileAds
-        product: GoogleMobileAds
       - package: StreamArcCore
+      - package: Kingfisher
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.samanherjan.streamarc.macos

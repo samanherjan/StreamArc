@@ -122,7 +122,29 @@ public struct M3UParser {
             }
         }
 
+        // Deduplicate channels with the same tvg-id: keep first as primary, collect rest as fallbacks
+        result.channels = Self.deduplicateChannels(result.channels)
         return result
+    }
+
+    /// Groups channels sharing the same non-empty tvg-id. The first occurrence keeps its
+    /// streamURL as primary; subsequent duplicates are appended to fallbackURLs.
+    private static func deduplicateChannels(_ channels: [Channel]) -> [Channel] {
+        var seen: [String: Int] = [:]       // tvg-id → index in output
+        var output: [Channel] = []
+        for ch in channels {
+            guard let epgId = ch.epgId, !epgId.isEmpty else {
+                output.append(ch)
+                continue
+            }
+            if let existingIdx = seen[epgId] {
+                output[existingIdx].fallbackURLs.append(ch.streamURL)
+            } else {
+                seen[epgId] = output.count
+                output.append(ch)
+            }
+        }
+        return output
     }
 
     public static func parse(url: URL) async throws -> ParseResult {

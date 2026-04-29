@@ -9,9 +9,15 @@ struct LiveTVView: View {
     @State private var selectedChannel: Channel?
     @State private var showPlayer = false
     @State private var showPaywall = false
+    @State private var showVODPlayer = false
+    @State private var resumeEntry: WatchHistoryEntry?
 
     @Environment(EntitlementManager.self) private var entitlements
     @Environment(AdsManager.self)          private var adsManager
+    @Environment(\.modelContext)           private var modelContext
+
+    // Pin bar refresh trigger
+    @State private var pinBarRefreshID = UUID()
 
     var filteredChannels: [Channel] {
         localVM.filteredChannels(from: viewModel.channels, isPremium: entitlements.isPremium)
@@ -51,14 +57,19 @@ struct LiveTVView: View {
                 }
             }
             .background(Color.saBackground.ignoresSafeArea())
-#if os(iOS)
             .searchable(text: $localVM.searchText, prompt: "Search channels")
-#endif
         }
         .fullScreenCover(isPresented: $showPlayer) {
             if let ch = selectedChannel {
                 PlayerView(streamURL: ch.streamURL, title: ch.name, isLiveTV: true,
                            channel: ch, allChannels: filteredChannels)
+            }
+        }
+        .fullScreenCover(isPresented: $showVODPlayer) {
+            if let entry = resumeEntry,
+               let vod = viewModel.vodItems.first(where: { $0.id == entry.contentId }) {
+                PlayerView(streamURL: vod.streamURL, title: vod.title, isLiveTV: false,
+                           startPosition: entry.lastPosition)
             }
         }
         .paywallSheet(isPresented: $showPaywall)
@@ -178,6 +189,34 @@ struct LiveTVView: View {
     private var countryGrid: some View {
         let countries = localVM.countryGroups(from: viewModel.channels, isPremium: entitlements.isPremium)
         return VStack(alignment: .leading, spacing: 16) {
+
+            // Quick-access pin bar
+            FavoritesPinBar(channels: viewModel.channels) { channel in
+                selectedChannel = channel
+                showPlayer = true
+            }
+            .id(pinBarRefreshID)
+
+            // Continue Watching (VOD resume)
+            ContinueWatchingRow { entry in
+                resumeEntry = entry
+                showVODPlayer = true
+            }
+
+
+            // Quick-access pin bar
+            FavoritesPinBar(channels: viewModel.channels) { channel in
+                selectedChannel = channel
+                showPlayer = true
+            }
+            .id(pinBarRefreshID)
+
+            // Continue Watching (VOD resume)
+            ContinueWatchingRow { entry in
+                resumeEntry = entry
+                showVODPlayer = true
+            }
+
             // Stats header
             HStack(spacing: 16) {
                 statBadge(
@@ -450,6 +489,13 @@ struct LiveTVView: View {
 
                         Spacer()
 
+                        // Fallback indicator
+                        if !channel.fallbackURLs.isEmpty {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.caption2)
+                                .foregroundStyle(Color.saTextSecondary.opacity(0.5))
+                        }
+
                         // Live dot + play
                         HStack(spacing: 8) {
                             Circle()
@@ -471,6 +517,54 @@ struct LiveTVView: View {
                     )
                 }
                 .cardFocusable()
+                .contextMenu {
+                    let mgr = FavoritesManager(modelContext: modelContext)
+                    let isPinned = mgr.isChannelPinned(contentId: channel.id)
+
+                    if isPinned {
+                        Button(role: .destructive) {
+                            try? mgr.unpinChannel(contentId: channel.id)
+                            pinBarRefreshID = UUID()
+                        } label: {
+                            Label("Unpin from Bar", systemImage: "pin.slash")
+                        }
+                    } else {
+                        Button {
+                            try? mgr.pinChannel(
+                                contentId: channel.id,
+                                title: channel.name,
+                                imageURL: channel.logoURL,
+                                isPremium: entitlements.isPremium
+                            )
+                            pinBarRefreshID = UUID()
+                        } label: {
+                            Label("Pin to Quick Bar", systemImage: "pin")
+                        }
+                    }
+
+                    Button {
+                        try? mgr.toggleFavorite(
+                            contentId: channel.id,
+                            contentType: "channel",
+                            title: channel.name,
+                            imageURL: channel.logoURL
+                        )
+                    } label: {
+                        Label(
+                            mgr.isFavorite(contentId: channel.id) ? "Remove from Favorites" : "Add to Favorites",
+                            systemImage: mgr.isFavorite(contentId: channel.id) ? "heart.slash" : "heart"
+                        )
+                    }
+
+                    Divider()
+
+                    Button {
+                        selectedChannel = channel
+                        showPlayer = true
+                    } label: {
+                        Label("Watch", systemImage: "play.fill")
+                    }
+                }
             }
         }
         .padding(.horizontal)

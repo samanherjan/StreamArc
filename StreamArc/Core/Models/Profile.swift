@@ -1,11 +1,12 @@
 import Foundation
 import SwiftData
+import StreamArcCore
 
 @Model
 final class Profile {
     var id: String
     var name: String
-    var sourceType: SourceType
+    var sourceTypeRaw: String
     var isActive: Bool
     var lastLoadedAt: Date?
     var createdAt: Date
@@ -28,6 +29,12 @@ final class Profile {
     // Shared optional
     var epgURL: String?
 
+    /// Computed accessor for the strongly-typed SourceType.
+    @Transient var sourceType: SourceType {
+        get { SourceType(rawValue: sourceTypeRaw) ?? .m3u }
+        set { sourceTypeRaw = newValue.rawValue }
+    }
+
     init(
         id: String = UUID().uuidString,
         name: String,
@@ -37,7 +44,7 @@ final class Profile {
     ) {
         self.id = id
         self.name = name
-        self.sourceType = sourceType
+        self.sourceTypeRaw = sourceType.rawValue
         self.isActive = isActive
         self.createdAt = createdAt
     }

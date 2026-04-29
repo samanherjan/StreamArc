@@ -59,9 +59,7 @@ struct MoviesView: View {
 #endif
             }
             .background(Color.saBackground.ignoresSafeArea())
-#if os(iOS)
             .searchable(text: $localVM.searchText, prompt: "Search movies")
-#endif
 #if os(tvOS)
             .fullScreenCover(item: $selectedItem) { item in
                 MovieDetailView(item: item)
@@ -189,7 +187,7 @@ struct MoviesView: View {
             )
             .padding(.horizontal)
         }
-        .buttonStyle(.plain)
+        .cardFocusable()
         .paywallSheet(isPresented: $showPaywall)
     }
 }
@@ -264,7 +262,7 @@ private struct FeaturedHeroView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .cardFocusable()
     }
 }
 
@@ -375,7 +373,7 @@ private struct MoviePosterCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .buttonStyle(.plain)
+        .cardFocusable()
 #if os(macOS)
         .onHover { isHovered = $0 }
 #endif

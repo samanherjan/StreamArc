@@ -13,16 +13,29 @@ final class PlayerViewModel: NSObject {
     private(set) var currentTime: Double = 0
     private(set) var duration: Double = 0
     private(set) var isLoading = true
+    private(set) var isBuffering = false
     private(set) var error: String?
 
     var currentChannelIndex: Int = 0
     private var allChannels: [Channel] = []
     private var timeObserver: Any?
     private var statusObservation: NSKeyValueObservation?
-    private var stalkerClient: StalkerClient?
+    private var stallObservation: NSKeyValueObservation?
+    private var stalkerConfig: StalkerClient.Config?
     private var sourceType: SourceType = .m3u
     private var retryCount = 0
-    private static let maxRetries = 2
+    private var currentURL: URL?
+    private let retryPolicy = RetryPolicy(maxAttempts: 3, baseDelay: 1.0, maxDelay: 8.0)
+
+    // Fallback URL cycling — populated from Channel.fallbackURLs on setup
+    private var fallbackURLs: [String] = []
+    private var fallbackIndex = 0
+
+    // Pending seek position (seconds) applied once the player is ready (for VOD resume)
+    var pendingSeekPosition: Double = 0
+
+    /// The channel currently loaded (updated on channel switches).
+    private(set) var currentLiveChannel: Channel?
 
 #if !os(tvOS)
     private var pipController: AVPictureInPictureController?
@@ -35,9 +48,15 @@ final class PlayerViewModel: NSObject {
         cleanup()
         allChannels = channels
         currentChannelIndex = currentIndex
+        currentLiveChannel = (currentIndex < channels.count) ? channels[currentIndex] : nil
+        currentLiveChannel = (currentIndex < channels.count) ? channels[currentIndex] : nil
         retryCount = 0
+        fallbackIndex = 0
+        fallbackURLs = (currentIndex < channels.count) ? channels[currentIndex].fallbackURLs : []
         error = nil
         isLoading = true
+        isBuffering = false
+        currentURL = url
 
         Task { @MainActor in
             await startPlayback(url: url)
@@ -50,23 +69,28 @@ final class PlayerViewModel: NSObject {
         if profile.sourceType == .stalker,
            let portal = profile.portalURL,
            let mac = profile.macAddress {
-            stalkerClient = StalkerClient(config: .init(portalURL: portal, macAddress: mac))
+            stalkerConfig = StalkerClient.Config(portalURL: portal, macAddress: mac)
         } else {
-            stalkerClient = nil
+            stalkerConfig = nil
         }
     }
 
     private func startPlayback(url: URL) async {
         do {
-            let resolvedURL = try await resolveStreamURL(url)
+            let resolvedURL = try await StreamResolver.resolve(
+                urlString: url.absoluteString,
+                sourceType: sourceType,
+                stalkerConfig: stalkerConfig
+            )
             let item = AVPlayerItem(url: resolvedURL)
-            item.preferredForwardBufferDuration = 5
+            item.preferredForwardBufferDuration = 8
 
             let avPlayer = AVPlayer(playerItem: item)
             avPlayer.automaticallyWaitsToMinimizeStalling = true
             self.player = avPlayer
 
             observeStatus(item: item)
+            observeStalls(item: item)
             observeTime(avPlayer: avPlayer)
 
             avPlayer.play()
@@ -75,37 +99,6 @@ final class PlayerViewModel: NSObject {
             self.isLoading = false
             self.error = "Failed to load stream: \(error.localizedDescription)"
         }
-    }
-
-    /// Resolves the final playable URL. Strips "ffmpeg " prefix, resolves Stalker cmd URLs.
-    private func resolveStreamURL(_ url: URL) async throws -> URL {
-        var urlString = url.absoluteString
-
-        // Strip common "ffmpeg " prefix from Stalker/portal URLs
-        if urlString.hasPrefix("ffmpeg ") {
-            urlString = String(urlString.dropFirst(7))
-        }
-
-        // Stalker sources need server-side link creation
-        if sourceType == .stalker, let client = stalkerClient {
-            do {
-                try await client.authenticate()
-                let resolved = try await client.resolveStreamURL(cmd: urlString)
-                let clean = resolved.hasPrefix("ffmpeg ") ? String(resolved.dropFirst(7)) : resolved
-                guard let finalURL = URL(string: clean) else {
-                    throw URLError(.badURL)
-                }
-                return finalURL
-            } catch {
-                // If resolution fails, try the raw URL as fallback
-                print("[PlayerVM] Stalker resolve failed, trying raw URL: \(error)")
-            }
-        }
-
-        guard let finalURL = URL(string: urlString) else {
-            throw URLError(.badURL)
-        }
-        return finalURL
     }
 
     // MARK: - Playback controls
@@ -146,6 +139,7 @@ final class PlayerViewModel: NSObject {
     private func switchToChannel(at index: Int) {
         guard index < allChannels.count else { return }
         let channel = allChannels[index]
+        currentLiveChannel = channel
         guard let url = URL(string: channel.streamURL) else { return }
         setup(url: url, channels: allChannels, currentIndex: index)
     }
@@ -187,11 +181,26 @@ final class PlayerViewModel: NSObject {
         item.select(option, in: group)
     }
 
+    func availableSubtitleOptions() async -> [AVMediaSelectionOption] {
+        guard let group = try? await player?.currentItem?.asset.loadMediaSelectionGroup(for: .legible) else {
+            return []
+        }
+        return group.options
+    }
+
+    func selectSubtitleOption(_ option: AVMediaSelectionOption) async {
+        guard let item = player?.currentItem,
+              let group = try? await item.asset.loadMediaSelectionGroup(for: .legible) else { return }
+        item.select(option, in: group)
+    }
+
     // MARK: - Cleanup
 
     func cleanup() {
         statusObservation?.invalidate()
         statusObservation = nil
+        stallObservation?.invalidate()
+        stallObservation = nil
         if let obs = timeObserver {
             player?.removeTimeObserver(obs)
             timeObserver = nil
@@ -200,6 +209,7 @@ final class PlayerViewModel: NSObject {
         player?.replaceCurrentItem(with: nil)
         player = nil
         isLoading = true
+        isBuffering = false
         error = nil
     }
 
@@ -213,27 +223,58 @@ final class PlayerViewModel: NSObject {
                 switch item.status {
                 case .readyToPlay:
                     self.isLoading = false
+                    self.isBuffering = false
                     self.error = nil
                     let dur = try? await item.asset.load(.duration)
                     if let dur, dur.seconds.isFinite {
                         self.duration = dur.seconds
                     }
+                    // Resume from saved position (VOD continue-watching)
+                    if self.pendingSeekPosition > 0 {
+                        self.seek(to: self.pendingSeekPosition)
+                        self.pendingSeekPosition = 0
+                    }
                 case .failed:
-                    // Retry logic
-                    if self.retryCount < Self.maxRetries {
+                    // Retry with exponential backoff first
+                    if self.retryCount < self.retryPolicy.maxAttempts {
+                        let attempt = self.retryCount
                         self.retryCount += 1
-                        print("[PlayerVM] Retry \(self.retryCount)/\(Self.maxRetries)")
-                        if let url = (item.asset as? AVURLAsset)?.url {
-                            try? await Task.sleep(for: .seconds(1))
+                        let delay = self.retryPolicy.delay(forAttempt: attempt)
+                        print("[PlayerVM] Retry \(self.retryCount)/\(self.retryPolicy.maxAttempts) after \(delay)s")
+                        if let url = self.currentURL {
+                            try? await Task.sleep(for: .seconds(delay))
+                            guard !Task.isCancelled else { return }
                             await self.startPlayback(url: url)
+                        }
+                    } else if self.fallbackIndex < self.fallbackURLs.count {
+                        // Primary + retries exhausted — try next fallback source
+                        let fallbackStr = self.fallbackURLs[self.fallbackIndex]
+                        self.fallbackIndex += 1
+                        self.retryCount = 0
+                        print("[PlayerVM] Fallback \(self.fallbackIndex)/\(self.fallbackURLs.count): \(fallbackStr)")
+                        if let fallbackURL = URL(string: fallbackStr) {
+                            self.currentURL = fallbackURL
+                            await self.startPlayback(url: fallbackURL)
                         }
                     } else {
                         self.isLoading = false
+                        self.isBuffering = false
                         self.error = item.error?.localizedDescription ?? "Playback failed. The stream may be offline or unsupported."
                     }
                 default:
                     break
                 }
+            }
+        }
+    }
+
+    /// Monitors playback stalls and shows buffering indicator.
+    private func observeStalls(item: AVPlayerItem) {
+        stallObservation?.invalidate()
+        stallObservation = item.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { [weak self] item, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.isBuffering = !item.isPlaybackLikelyToKeepUp && self.isPlaying
             }
         }
     }

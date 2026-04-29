@@ -113,7 +113,7 @@ struct MovieDetailView: View {
                                     .background(Color.saAccent)
                                     .clipShape(Capsule())
                             }
-                            .buttonStyle(.plain)
+                            .cardFocusable()
 
                             TrailerButton(item: item)
 
