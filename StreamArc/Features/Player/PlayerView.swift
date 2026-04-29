@@ -29,6 +29,8 @@ struct PlayerView: View {
     @State private var showControls = true
     @State private var controlsTimer: Task<Void, Never>?
     @State private var showTrackPicker = false
+    @State private var showTVOverlay = false
+    @State private var tvOverlayTimer: Task<Void, Never>?
 
     var body: some View {
 #if os(tvOS)
@@ -96,10 +98,79 @@ struct PlayerView: View {
                         .buttonStyle(.bordered)
                 }
             }
+
+            // tvOS info overlay — shows on interaction, auto-hides
+            if showTVOverlay {
+                VStack {
+                    // Title bar
+                    HStack {
+                        Text(title.isEmpty ? (viewModel.vm.currentLiveChannel?.name ?? "Playing") : title)
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Spacer()
+                        if isLiveTV, let ch = viewModel.vm.currentLiveChannel {
+                            Text(ch.groupTitle ?? "")
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                    }
+                    .padding(.horizontal, 80)
+                    .padding(.top, 60)
+
+                    Spacer()
+
+                    // Bottom info
+                    VStack(spacing: 8) {
+                        if isLiveTV {
+                            if let prog = channel?.currentProgram ?? viewModel.vm.currentLiveChannel?.currentProgram {
+                                Text(prog.title)
+                                    .font(.title3.weight(.medium))
+                                    .foregroundStyle(.white)
+                            }
+                            Text("▲ ▼ to switch channels")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.5))
+                        } else {
+                            // VOD progress
+                            let time = viewModel.ksCoordinator.timemodel
+                            HStack {
+                                Text(formatTimeTv(time.currentTime))
+                                Spacer()
+                                Text(formatTimeTv(time.totalTime))
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .padding(.horizontal, 80)
+
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.white.opacity(0.3)).frame(height: 4)
+                                    Capsule().fill(Color.saAccent)
+                                        .frame(width: geo.size.width * progress(current: time.currentTime, total: time.totalTime), height: 4)
+                                }
+                            }
+                            .frame(height: 4)
+                            .padding(.horizontal, 80)
+                        }
+                    }
+                    .padding(.bottom, 80)
+                }
+                .background(
+                    LinearGradient(stops: [
+                        .init(color: .black.opacity(0.7), location: 0),
+                        .init(color: .clear, location: 0.3),
+                        .init(color: .clear, location: 0.7),
+                        .init(color: .black.opacity(0.7), location: 1),
+                    ], startPoint: .top, endPoint: .bottom)
+                )
+                .transition(.opacity)
+            }
         }
+        .animation(.easeInOut(duration: 0.3), value: showTVOverlay)
         .task { load() }
         .onDisappear { saveWatchProgress(); viewModel.vm.cleanup() }
         .onPlayPauseCommand {
+            showTVOverlayBriefly()
             if let layer = viewModel.ksCoordinator.playerLayer {
                 if layer.state == .bufferFinished {
                     layer.pause()
@@ -110,14 +181,49 @@ struct PlayerView: View {
                 viewModel.vm.togglePlayPause()
             }
         }
-        .onExitCommand { dismiss() }
+        .onExitCommand {
+            if showTVOverlay {
+                showTVOverlay = false
+            } else {
+                dismiss()
+            }
+        }
         .onMoveCommand { direction in
+            showTVOverlayBriefly()
             switch direction {
             case .up:    viewModel.vm.previousChannel()
             case .down:  viewModel.vm.nextChannel()
-            default:     break
+            case .left:  viewModel.ksCoordinator.skip(interval: -15)
+            case .right: viewModel.ksCoordinator.skip(interval: 15)
+            @unknown default: break
             }
         }
+    }
+
+    private func showTVOverlayBriefly() {
+        showTVOverlay = true
+        tvOverlayTimer?.cancel()
+        tvOverlayTimer = Task {
+            try? await Task.sleep(for: .seconds(5))
+            if !Task.isCancelled {
+                showTVOverlay = false
+            }
+        }
+    }
+
+    private func formatTimeTv(_ seconds: Int) -> String {
+        let h = seconds / 3600
+        let m = (seconds % 3600) / 60
+        let s = seconds % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%d:%02d", m, s)
+    }
+
+    private func progress(current: Int, total: Int) -> CGFloat {
+        guard total > 0 else { return 0 }
+        return CGFloat(current) / CGFloat(total)
     }
 #endif
 
