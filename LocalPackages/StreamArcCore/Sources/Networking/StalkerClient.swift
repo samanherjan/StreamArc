@@ -34,15 +34,20 @@ public actor StalkerClient {
             return p + "/server"
         }
 
-        fileprivate var magUserAgent: String {
+        public var magUserAgent: String {
             let serial = macAddress.replacingOccurrences(of: ":", with: "")
             return "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) " +
                    "MAG200 stbapp ver: 2.18.27 serial: \(serial) SDK/4.4.17 " +
                    "(Philips, magnet, Philips) SmartHub/4.2.0.0"
         }
 
-        fileprivate var stalkerCookie: String {
-            "mac=\(macAddress); stb_lang=en; timezone=UTC"
+        public var stalkerCookie: String {
+            // Percent-encode the colons in the MAC address for strict RFC 6265
+            // cookie-value compliance, matching the format the server expects
+            // (e.g. mac=00%3A1A%3A79%3AF6%3A7E%3A02).
+            let encodedMAC = macAddress
+                .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? macAddress
+            return "mac=\(encodedMAC); stb_lang=en; timezone=UTC"
         }
     }
 
@@ -286,19 +291,85 @@ public actor StalkerClient {
 
     // MARK: - Stream URL resolution
 
+    /// Resolves a raw Stalker cmd to a final playable HTTP URL.
+    ///
+    /// This portal stores three distinct cmd formats:
+    ///   1. Direct HTTP URL (live TV)  — already playable, return as-is.
+    ///   2. Base64-encoded JSON (VOD)  — must call `type=vod&action=create_link`.
+    ///   3. Other cmd string           — must call `type=itv&action=create_link`.
     public func resolveStreamURL(cmd: String) async throws -> String {
-        let tok     = try requireToken()
+        let tok = try requireToken()
+
+        // ── Case 1: Direct HTTP URL ───────────────────────────────────────────
+        // Live-TV channels on this portal already embed a valid play_token in
+        // the cmd URL. Calling create_link would overwrite the stream= parameter
+        // with an empty value on this server. Use the raw URL directly.
+        if cmd.hasPrefix("http://") || cmd.hasPrefix("https://") {
+            return cmd
+        }
+
+        // ── Case 2 / 3: cmd needs server-side resolution ──────────────────────
+        // Detect VOD by checking if cmd is base64-encoded JSON (no scheme, only
+        // base64 alphabet characters) vs. a plain live-TV cmd string.
+        let contentType = isBase64VODCmd(cmd) ? "vod" : "itv"
+
         let encoded = cmd.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cmd
-        let data    = try await get(
-            "\(config.serverBase)/load.php?type=itv&action=create_link&cmd=\(encoded)&series=0",
-            authToken: tok
+
+        // Try create_link; on auth failure, re-authenticate and retry once.
+        let resolved = try await createLinkWithRetry(
+            contentType: contentType, encoded: encoded, token: tok
         )
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let js   = json["js"] as? [String: Any],
-              let cmd2 = js["cmd"] as? String else {
+        return resolved
+    }
+
+    /// Calls create_link and retries once with a fresh token on auth failure.
+    private func createLinkWithRetry(contentType: String, encoded: String, token: String) async throws -> String {
+        let url = "\(config.serverBase)/load.php?type=\(contentType)&action=create_link&cmd=\(encoded)&series=0"
+
+        let data = try await get(url, authToken: token)
+
+        // Check for auth error (empty/missing js or token-expired indicator)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let js = json["js"] as? [String: Any],
+           let cmd2 = js["cmd"] as? String,
+           !cmd2.isEmpty {
+            return try validateResolvedCmd(cmd2)
+        }
+
+        // Possibly expired token — re-authenticate and retry once
+        try await authenticate()
+        let newTok = try requireToken()
+        let retryData = try await get(url, authToken: newTok)
+
+        guard let json = try? JSONSerialization.jsonObject(with: retryData) as? [String: Any],
+              let js = json["js"] as? [String: Any],
+              let cmd2 = js["cmd"] as? String,
+              !cmd2.isEmpty else {
             throw StalkerError.streamResolutionFailed
         }
-        return cmd2.hasPrefix("ffmpeg ") ? String(cmd2.dropFirst(7)) : cmd2
+        return try validateResolvedCmd(cmd2)
+    }
+
+    /// Strips ffmpeg prefix and validates the resolved URL doesn't have empty stream= param.
+    private func validateResolvedCmd(_ cmd2: String) throws -> String {
+        let resolved = cmd2.hasPrefix("ffmpeg ") ? String(cmd2.dropFirst(7)) : cmd2
+
+        // Guard against portals that return a broken URL with an empty stream= param.
+        guard !resolved.contains("stream=&"),
+              !resolved.hasSuffix("stream="),
+              !resolved.hasSuffix("stream=\n") else {
+            throw StalkerError.streamResolutionFailed
+        }
+        return resolved
+    }
+
+    /// Returns true when `cmd` looks like a base64-encoded VOD payload rather
+    /// than a URL or a plain live-TV cmd string.
+    private func isBase64VODCmd(_ cmd: String) -> Bool {
+        guard !cmd.hasPrefix("http"), !cmd.contains("://") else { return false }
+        let b64 = CharacterSet(charactersIn:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=-_")
+        return cmd.unicodeScalars.allSatisfy { b64.contains($0) }
     }
 
     // MARK: - Networking

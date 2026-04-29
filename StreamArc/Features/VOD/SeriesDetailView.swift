@@ -169,7 +169,7 @@ struct SeriesDetailView: View {
                 .padding(.vertical)
             }
             .background(Color.saBackground)
-            #if !os(tvOS)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
@@ -181,11 +181,19 @@ struct SeriesDetailView: View {
             .task { await loadSeasons() }
             .onAppear { checkFavorite() }
         }
-        .fullScreenCover(isPresented: $showPlayer) {
+#if os(macOS)
+        .sheet(isPresented: $showPlayer) {
             if let ep = selectedEpisode {
-                PlayerView(streamURL: ep.streamURL, title: ep.title)
+                PlayerView(streamURL: ep.streamURL, title: ep.title, profile: activeProfile)
             }
         }
+#else
+        .fullScreenCover(isPresented: $showPlayer) {
+            if let ep = selectedEpisode {
+                PlayerView(streamURL: ep.streamURL, title: ep.title, profile: activeProfile)
+            }
+        }
+#endif
     }
 
     // MARK: - Seasons & Episodes

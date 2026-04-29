@@ -15,6 +15,8 @@ public struct VODItem: Identifiable, Hashable, Sendable {
     public var groupTitle: String
     public var rating: String?
     public var description: String?
+    /// Custom HTTP headers required by this stream (User-Agent, Referer, Origin).
+    public var httpHeaders: [String: String] = [:]
 
     public init(
         id: String = UUID().uuidString,

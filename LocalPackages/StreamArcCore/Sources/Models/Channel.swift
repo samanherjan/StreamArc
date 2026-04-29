@@ -11,6 +11,9 @@ public struct Channel: Identifiable, Hashable, Sendable {
     public var epgId: String?
     public var currentProgram: EPGProgram?
     public var nextProgram: EPGProgram?
+    /// Custom HTTP headers required by this stream (User-Agent, Referer, Origin).
+    /// Populated from #EXTVLCOPT lines or pipe-suffix headers in M3U playlists.
+    public var httpHeaders: [String: String]
 
     public init(
         id: String = UUID().uuidString,
@@ -19,7 +22,8 @@ public struct Channel: Identifiable, Hashable, Sendable {
         logoURL: String? = nil,
         streamURL: String,
         fallbackURLs: [String] = [],
-        epgId: String? = nil
+        epgId: String? = nil,
+        httpHeaders: [String: String] = [:]
     ) {
         self.id = id
         self.name = name
@@ -28,5 +32,6 @@ public struct Channel: Identifiable, Hashable, Sendable {
         self.streamURL = streamURL
         self.fallbackURLs = fallbackURLs
         self.epgId = epgId
+        self.httpHeaders = httpHeaders
     }
 }

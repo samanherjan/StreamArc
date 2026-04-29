@@ -1,0 +1,14 @@
+{
+  "images" : [
+    {
+      "filename" : "TopShelf_1x.jpeg",
+      "idiom" : "tv",
+      "role" : "top-shelf-image",
+      "scale" : "1x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

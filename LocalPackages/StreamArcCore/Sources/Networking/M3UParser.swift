@@ -88,7 +88,7 @@ public struct M3UParser {
             let line = lines[idx].trimmingCharacters(in: .whitespacesAndNewlines)
 
             if line.hasPrefix("#EXTINF:") {
-                let (url, nextIdx) = nextStreamURL(in: lines, from: idx + 1)
+                let (url, headers, nextIdx) = nextStreamURL(in: lines, from: idx + 1)
                 if let streamURL = url {
                     let attrs = extractAttributes(from: line)
                     let title = extractTitle(from: line, attrs: attrs)
@@ -97,20 +97,23 @@ public struct M3UParser {
                     if isVOD(group: group) {
                         let type: VODType = group.lowercased().contains("series") ||
                                            group.lowercased().contains("show") ? .series : .movie
-                        result.vodItems.append(VODItem(
+                        var item = VODItem(
                             title: title,
                             posterURL: attrs["tvg-logo"],
                             streamURL: streamURL,
                             type: type,
                             groupTitle: group
-                        ))
+                        )
+                        item.httpHeaders = headers
+                        result.vodItems.append(item)
                     } else {
                         result.channels.append(Channel(
                             name: title,
                             groupTitle: group,
                             logoURL: attrs["tvg-logo"],
                             streamURL: streamURL,
-                            epgId: attrs["tvg-id"]
+                            epgId: attrs["tvg-id"],
+                            httpHeaders: headers
                         ))
                     }
                     idx = nextIdx
@@ -229,19 +232,55 @@ public struct M3UParser {
 
     // MARK: - Private helpers
 
-    private static func nextStreamURL(in lines: [String], from start: Int) -> (String?, Int) {
+    /// Returns (cleanURL, httpHeaders, nextLineIndex).
+    /// Collects #EXTVLCOPT option lines and pipe-suffix headers from the URL line.
+    private static func nextStreamURL(in lines: [String], from start: Int) -> (url: String?, headers: [String: String], nextIdx: Int) {
         var i = start
+        var headers: [String: String] = [:]
         while i < lines.count {
             let l = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
-            if l.isEmpty || l.hasPrefix("#EXTINF") {
-                break
-            }
-            if !l.hasPrefix("#") {
-                return (l, i + 1)
+            if l.isEmpty || l.hasPrefix("#EXTINF") { break }
+            if l.hasPrefix("#EXTVLCOPT:") {
+                parseEXTVLCOPT(l, into: &headers)
+            } else if !l.hasPrefix("#") {
+                var urlStr = l
+                if let pipeIdx = l.firstIndex(of: "|") {
+                    urlStr = String(l[l.startIndex..<pipeIdx])
+                    parsePipeSuffix(String(l[l.index(after: pipeIdx)...]), into: &headers)
+                }
+                return (urlStr.isEmpty ? nil : urlStr, headers, i + 1)
             }
             i += 1
         }
-        return (nil, i)
+        return (nil, headers, i)
+    }
+
+    private static func parseEXTVLCOPT(_ line: String, into headers: inout [String: String]) {
+        let opt = String(line.dropFirst("#EXTVLCOPT:".count))
+        guard let eqIdx = opt.firstIndex(of: "=") else { return }
+        let key = String(opt[opt.startIndex..<eqIdx]).lowercased().trimmingCharacters(in: .whitespaces)
+        let value = String(opt[opt.index(after: eqIdx)...]).trimmingCharacters(in: .whitespaces)
+        switch key {
+        case "http-user-agent": headers["User-Agent"] = value
+        case "http-referrer":   headers["Referer"] = value
+        case "http-origin":     headers["Origin"] = value
+        default: break
+        }
+    }
+
+    private static func parsePipeSuffix(_ suffix: String, into headers: inout [String: String]) {
+        for part in suffix.components(separatedBy: "&") {
+            guard let eqIdx = part.firstIndex(of: "=") else { continue }
+            let key = String(part[part.startIndex..<eqIdx]).trimmingCharacters(in: .whitespaces)
+            let value = String(part[part.index(after: eqIdx)...]).trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty else { continue }
+            switch key.lowercased() {
+            case "user-agent": headers["User-Agent"] = value
+            case "referer":    headers["Referer"] = value
+            case "origin":     headers["Origin"] = value
+            default:           headers[key] = value
+            }
+        }
     }
 
     // ...existing extractAttributes, extractTitle, isVOD unchanged...

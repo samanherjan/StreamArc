@@ -2,6 +2,7 @@ import StreamArcCore
 import SwiftUI
 import AVKit
 import SwiftData
+import KSPlayer
 
 struct PlayerView: View {
 
@@ -12,6 +13,9 @@ struct PlayerView: View {
     var allChannels: [Channel] = []
     /// Resume position in seconds; 0 = start from beginning.
     var startPosition: Double = 0
+    /// Pass the active profile directly to eliminate the @Query race condition.
+    /// When provided this is used instead of the internal @Query result.
+    var profile: Profile? = nil
 
     @StateObject private var viewModel = PlayerViewModelBridge()
     @Environment(\.dismiss) private var dismiss
@@ -39,11 +43,30 @@ struct PlayerView: View {
 #if os(tvOS)
     private var tvPlayerBody: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            LinearGradient(
+                colors: [Color(red: 0.06, green: 0.04, blue: 0.22), Color(red: 0.18, green: 0.10, blue: 0.38), Color(red: 0.06, green: 0.04, blue: 0.22)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            if let player = viewModel.vm.player {
-                AVPlayerViewControllerRepresentable(player: player)
+            if let ksURL = viewModel.vm.ksPlayerURL {
+                // KSPlayer for Stalker streams — raw video view, no built-in controls.
+                // Siri Remote handles play/pause, channel switch via onMoveCommand.
+                KSVideoPlayer(coordinator: viewModel.ksCoordinator, url: ksURL, options: viewModel.vm.ksPlayerOptions ?? KSOptions())
+                    .onStateChanged { _, state in
+                        if state == .bufferFinished {
+                            viewModel.vm.markPlaying()
+                        }
+                    }
                     .ignoresSafeArea()
+            } else {
+                // AVPlayer for HLS/MP4/TS (standard streams)
+                AVPlayerViewControllerRepresentable(
+                    player: viewModel.vm.player,
+                    onPlayerReady: { viewModel.vm.markPlaying() }
+                )
+                .ignoresSafeArea()
             }
 
             if viewModel.vm.isLoading || viewModel.vm.isBuffering {
@@ -74,8 +97,20 @@ struct PlayerView: View {
                 }
             }
         }
-        .onAppear { load() }
+        .task { load() }
         .onDisappear { saveWatchProgress(); viewModel.vm.cleanup() }
+        .onPlayPauseCommand {
+            if let layer = viewModel.ksCoordinator.playerLayer {
+                if layer.state == .bufferFinished {
+                    layer.pause()
+                } else {
+                    layer.play()
+                }
+            } else {
+                viewModel.vm.togglePlayPause()
+            }
+        }
+        .onExitCommand { dismiss() }
         .onMoveCommand { direction in
             switch direction {
             case .up:    viewModel.vm.previousChannel()
@@ -91,9 +126,24 @@ struct PlayerView: View {
 #if !os(tvOS)
     private var nonTVPlayerBody: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            LinearGradient(
+                colors: [Color(red: 0.06, green: 0.04, blue: 0.22), Color(red: 0.18, green: 0.10, blue: 0.38), Color(red: 0.06, green: 0.04, blue: 0.22)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            if let player = viewModel.vm.player {
+            if let ksURL = viewModel.vm.ksPlayerURL {
+                // KSPlayer for Stalker streams — raw video view, custom controls below
+                KSVideoPlayer(coordinator: viewModel.ksCoordinator, url: ksURL, options: viewModel.vm.ksPlayerOptions ?? KSOptions())
+                    .onStateChanged { _, state in
+                        if state == .bufferFinished {
+                            viewModel.vm.markPlaying()
+                        }
+                    }
+                    .ignoresSafeArea()
+                    .onTapGesture { toggleControls() }
+            } else if let player = viewModel.vm.player {
                 VideoPlayer(player: player)
                     .ignoresSafeArea()
                     .onTapGesture { toggleControls() }
@@ -133,8 +183,10 @@ struct PlayerView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: showControls)
+#if os(iOS)
         .statusBarHidden(true)
-        .onAppear { load() }
+#endif
+        .task { load() }
         .onDisappear { saveWatchProgress(); viewModel.vm.cleanup() }
     }
 
@@ -302,9 +354,29 @@ struct PlayerView: View {
     // MARK: - Helpers
 
     private func load() {
-        guard let url = URL(string: streamURL) else { return }
-        if let profile = activeProfile {
-            viewModel.vm.configureSource(profile: profile)
+        guard !streamURL.isEmpty else {
+            viewModel.vm.setError("No stream URL provided.")
+            return
+        }
+
+        let sanitized = streamURL.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Construct URL — for Stalker VOD base64 cmds that aren't valid URLs,
+        // use percent-encoding fallback. StreamResolver.resolve() receives
+        // url.absoluteString and handles all formats (http URLs, base64 blobs, etc.)
+        guard let url = URL(string: sanitized) ??
+              URL(string: sanitized.addingPercentEncoding(
+                withAllowedCharacters: .urlQueryAllowed
+                    .union(.urlHostAllowed)
+                    .union(.urlPathAllowed)) ?? sanitized)
+        else {
+            viewModel.vm.setError("Invalid stream URL.")
+            return
+        }
+
+        // Use the directly-passed profile first; fall back to @Query result.
+        if let resolvedProfile = profile ?? activeProfile {
+            viewModel.vm.configureSource(profile: resolvedProfile)
         }
         let idx = allChannels.firstIndex(where: { $0.streamURL == streamURL }) ?? 0
         viewModel.vm.pendingSeekPosition = startPosition
@@ -346,26 +418,46 @@ struct PlayerView: View {
 @MainActor
 final class PlayerViewModelBridge: ObservableObject {
     let vm = PlayerViewModel()
+    let ksCoordinator = KSVideoPlayer.Coordinator()
 }
 
 // MARK: - tvOS AVPlayerViewController wrapper
 
 #if os(tvOS)
 struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
-    let player: AVPlayer
+    /// The player to attach. nil renders a blank VC (before playback begins).
+    let player: AVPlayer?
+    /// Called once when the player has been attached to the VC post-layout and play() triggered.
+    var onPlayerReady: (() -> Void)?
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let vc = AVPlayerViewController()
-        vc.player = player
+        // ⚠️ Do NOT set vc.player here.
+        // makeUIViewController is called during the initial SwiftUI layout pass
+        // when UIKit has not yet given the VC a real frame (it gets a temporary
+        // zero-width constraint: _UITemporaryLayoutWidth = 0). On tvOS the media
+        // server (FigApplicationStateMonitor) refuses to initialise the pipeline
+        // against a zero-size surface and the AVPlayerItem immediately fails with
+        // AVFoundationErrorDomain -11828. The player is assigned in
+        // updateUIViewController, which fires after the view hierarchy is settled
+        // and the VC has its full-screen frame.
         vc.showsPlaybackControls = true
         vc.allowsPictureInPicturePlayback = false
         return vc
     }
 
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
-        if uiViewController.player !== player {
-            uiViewController.player = player
+        guard let player else {
+            if uiViewController.player != nil { uiViewController.player = nil }
+            return
         }
+        guard uiViewController.player !== player else { return }
+        // Assign the player now that the VC has its real frame.
+        uiViewController.player = player
+        // Start playback. The player's AVPlayerItem may still be loading, but
+        // calling play() here queues it so playback begins as soon as readyToPlay.
+        if player.rate == 0 { player.play() }
+        onPlayerReady?()
     }
 }
 #endif
@@ -438,7 +530,9 @@ struct TrackPickerSheet: View {
             .scrollContentBackground(.hidden)
             .background(Color.saBackground)
             .navigationTitle("Audio & Subtitles")
+#if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+#endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", action: onDismiss)

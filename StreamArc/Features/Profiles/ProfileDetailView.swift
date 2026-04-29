@@ -40,8 +40,7 @@ struct ProfileDetailView: View {
 
             Section("EPG") {
                 TextField("XMLTV URL (optional)", text: $epgURL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
+                    .urlTextField()
                     .autocorrectionDisabled()
             }
 
@@ -56,9 +55,9 @@ struct ProfileDetailView: View {
         #endif
         .background(Color.saBackground)
         .navigationTitle(profile.name)
-        #if !os(tvOS)
+#if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-        #endif
+#endif
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") { save() }
