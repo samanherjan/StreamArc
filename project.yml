@@ -61,6 +61,7 @@ targets:
         INFOPLIST_FILE: StreamArc/App/iOS/Info.plist
         DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
         VALIDATE_EMBEDDED_BINARY_IDS: NO
+        VALIDATE_PRODUCT: NO
     info:
       path: StreamArc/App/iOS/Info.plist
       properties:

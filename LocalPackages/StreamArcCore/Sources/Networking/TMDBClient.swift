@@ -68,6 +68,49 @@ public actor TMDBClient {
         return trailers
     }
 
+    /// Returns the YouTube video key for the first trailer of the given item.
+    public func youtubeTrailerKey(for item: VODItem, apiKey: String) async -> String? {
+        guard !apiKey.isEmpty else { return nil }
+        do {
+            let mediaType: TMDBMediaType = item.type == .series ? .tv : .movie
+            let id: Int?
+            if let existing = item.tmdbId {
+                id = existing
+            } else {
+                id = item.type == .series
+                    ? try await searchTV(title: item.title, apiKey: apiKey)
+                    : try await searchMovie(title: item.title, year: item.year, apiKey: apiKey)
+            }
+            guard let tmdbId = id else { return nil }
+            let vids = try await videos(tmdbId: tmdbId, mediaType: mediaType, apiKey: apiKey)
+            return vids.first?.key
+        } catch {
+            return nil
+        }
+    }
+
+    /// Returns the IMDb ID for a movie via TMDB detail lookup.
+    public func imdbId(for item: VODItem, apiKey: String) async -> String? {
+        guard !apiKey.isEmpty else { return nil }
+        do {
+            let id: Int?
+            if let existing = item.tmdbId {
+                id = existing
+            } else {
+                id = item.type == .series
+                    ? try await searchTV(title: item.title, apiKey: apiKey)
+                    : try await searchMovie(title: item.title, year: item.year, apiKey: apiKey)
+            }
+            guard let tmdbId = id else { return nil }
+            let detail = item.type == .series
+                ? try await tvDetail(tmdbId: tmdbId, apiKey: apiKey)
+                : try await movieDetail(tmdbId: tmdbId, apiKey: apiKey)
+            return detail.imdbId
+        } catch {
+            return nil
+        }
+    }
+
     /// Convenience: returns the first YouTube trailer URL for the given item.
     public func trailerURL(for item: VODItem, apiKey: String) async -> URL? {
         guard !apiKey.isEmpty else { return nil }
@@ -181,6 +224,7 @@ public struct TMDBVideo: Decodable, Sendable {
 
 public struct TMDBDetail: Decodable, Sendable {
     public let id: Int
+    public let imdbId: String?
     public let overview: String?
     public let voteAverage: Double?
     public let releaseDate: String?      // movie
@@ -193,6 +237,7 @@ public struct TMDBDetail: Decodable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case id, overview, genres, runtime, tagline, status
+        case imdbId = "imdb_id"
         case voteAverage = "vote_average"
         case releaseDate = "release_date"
         case firstAirDate = "first_air_date"
