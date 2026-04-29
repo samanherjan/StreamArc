@@ -65,62 +65,76 @@ public struct StalkerContentService: ContentService {
         let client = StalkerClient(config: config)
         try await client.authenticate()
 
-        // Channels first (fastest)
-        let channels = try await client.channels()
+        // Load channels, VOD, and series concurrently for maximum speed
+        async let channelsTask = client.channels()
+        async let vodTask = loadStalkerVOD(client: client)
+        async let seriesTask = loadStalkerSeries(client: client)
 
-        // VOD and series — don't fail the whole load if these timeout
-        let vodItems = await loadStalkerVOD(client: client)
-        let series = await loadStalkerSeries(client: client)
+        let channels = try await channelsTask
+        let vodItems = await vodTask
+        let series = await seriesTask
 
         return ContentResult(channels: channels, vodItems: vodItems, series: series)
     }
 
     private func loadStalkerVOD(client: StalkerClient) async -> [VODItem] {
         guard let categories = try? await client.vodCategories() else { return [] }
-        var allVOD: [VODItem] = []
-        for batch in categories.chunked(into: 3) {
-            let batchResults = await withTaskGroup(of: [VODItem].self) { group in
-                for cat in batch {
+        // Load all categories concurrently (up to 5 at a time)
+        return await withTaskGroup(of: [VODItem].self) { group in
+            var allVOD: [VODItem] = []
+            var active = 0
+            var catIterator = categories.makeIterator()
+
+            // Seed with initial batch
+            for _ in 0..<5 {
+                guard let cat = catIterator.next() else { break }
+                active += 1
+                group.addTask {
+                    guard let items = try? await client.vodItems(categoryId: cat.id) else { return [] }
+                    return items.map { var v = $0; v.groupTitle = cat.title; return v }
+                }
+            }
+
+            for await items in group {
+                allVOD.append(contentsOf: items)
+                active -= 1
+                if let cat = catIterator.next() {
+                    active += 1
                     group.addTask {
                         guard let items = try? await client.vodItems(categoryId: cat.id) else { return [] }
-                        return items.map { item -> VODItem in
-                            var v = item
-                            v.groupTitle = cat.title
-                            return v
-                        }
+                        return items.map { var v = $0; v.groupTitle = cat.title; return v }
                     }
                 }
-                var results: [VODItem] = []
-                for await items in group { results.append(contentsOf: items) }
-                return results
             }
-            allVOD.append(contentsOf: batchResults)
+            return allVOD
         }
-        return allVOD
     }
 
     private func loadStalkerSeries(client: StalkerClient) async -> [Series] {
         guard let categories = try? await client.seriesCategories() else { return [] }
-        var all: [Series] = []
-        for batch in categories.chunked(into: 3) {
-            let batchResults = await withTaskGroup(of: [Series].self) { group in
-                for cat in batch {
+        return await withTaskGroup(of: [Series].self) { group in
+            var all: [Series] = []
+            var catIterator = categories.makeIterator()
+
+            for _ in 0..<5 {
+                guard let cat = catIterator.next() else { break }
+                group.addTask {
+                    guard let items = try? await client.seriesItems(categoryId: cat.id) else { return [] }
+                    return items.map { var s = $0; s.groupTitle = cat.title; return s }
+                }
+            }
+
+            for await items in group {
+                all.append(contentsOf: items)
+                if let cat = catIterator.next() {
                     group.addTask {
                         guard let items = try? await client.seriesItems(categoryId: cat.id) else { return [] }
-                        return items.map { item -> Series in
-                            var s = item
-                            s.groupTitle = cat.title
-                            return s
-                        }
+                        return items.map { var s = $0; s.groupTitle = cat.title; return s }
                     }
                 }
-                var results: [Series] = []
-                for await items in group { results.append(contentsOf: items) }
-                return results
             }
-            all.append(contentsOf: batchResults)
+            return all
         }
-        return all
     }
 }
 

@@ -36,6 +36,8 @@ final class HomeViewModel {
 
         do {
             let service = Self.makeContentService(for: profile)
+
+            // For Stalker/Xtream: load content (channels+VOD+series load concurrently inside)
             let result = try await service.loadContent()
             channels = result.channels
             vodItems = result.vodItems
@@ -44,8 +46,13 @@ final class HomeViewModel {
             // Show content immediately — EPG loads in background
             loadState = .loaded
             profile.lastLoadedAt = .now
-            await loadEPG(profile: profile)
-            applyEPG()
+
+            // EPG in background — don't block UI
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.loadEPG(profile: profile)
+                self.applyEPG()
+            }
         } catch {
             loadState = .error(error.localizedDescription)
         }
