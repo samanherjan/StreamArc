@@ -5,6 +5,7 @@ options:
   createIntermediateGroups: true
   generateEmptyDirectories: false
   defaultConfig: Debug
+  developmentTeam: K2H226BNXQ
 
 packages:
   StreamArcCore:
@@ -15,6 +16,12 @@ packages:
   GoogleMobileAds:
     url: https://github.com/googleads/swift-package-manager-google-mobile-ads
     from: "11.0.0"
+  YouTubePlayerKit:
+    url: https://github.com/SvenTiigi/YouTubePlayerKit
+    from: "1.0.0"
+  KSPlayer:
+    url: https://github.com/kingslay/KSPlayer
+    from: "2.0.0"
 
 settings:
   base:
@@ -23,7 +30,8 @@ settings:
     ENABLE_BITCODE: NO
     SWIFT_STRICT_CONCURRENCY: targeted
     CODE_SIGN_STYLE: Automatic
-    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+    DEVELOPMENT_TEAM: K2H226BNXQ
+    VALIDATE_EMBEDDED_BINARY_IDS: NO
 
 targets:
 
@@ -46,10 +54,13 @@ targets:
       - package: Kingfisher
       - package: GoogleMobileAds
         product: GoogleMobileAds
+      - package: YouTubePlayerKit
+      - package: KSPlayer
     settings:
       base:
         INFOPLIST_FILE: StreamArc/App/iOS/Info.plist
         DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
+        VALIDATE_EMBEDDED_BINARY_IDS: NO
     info:
       path: StreamArc/App/iOS/Info.plist
       properties:
@@ -84,10 +95,31 @@ targets:
     dependencies:
       - package: StreamArcCore
       - package: Kingfisher
+      - package: KSPlayer
+    postBuildScripts:
+      - script: |
+          # Fix KSPlayer's libshaderc_combined framework bundle ID.
+          # Change underscore to hyphen (valid bundle ID char) to match what's in the binary.
+          FW_DIR="${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libshaderc_combined.framework"
+          if [ -d "$FW_DIR" ]; then
+            PLIST="$FW_DIR/Info.plist"
+            if [ -f "$PLIST" ]; then
+              /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.kintan.ksplayer.libshaderc-combined" "$PLIST" 2>/dev/null || true
+            fi
+            codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:-'-'}" --timestamp=none "$FW_DIR" 2>/dev/null || true
+          fi
+        name: Sign KSPlayer Framework
+        basedOnDependencyAnalysis: false
     settings:
       base:
         INFOPLIST_FILE: StreamArc/App/tvOS/Info.plist
         DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+        VALIDATE_EMBEDDED_BINARY_IDS: NO
+        VALIDATE_PRODUCT: NO
+        OTHER_CODE_SIGN_FLAGS: "--deep"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: K2H226BNXQ
     info:
       path: StreamArc/App/tvOS/Info.plist
       properties:
@@ -111,11 +143,14 @@ targets:
     dependencies:
       - package: StreamArcCore
       - package: Kingfisher
+      - package: YouTubePlayerKit
+      - package: KSPlayer
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.samanherjan.streamarc.macos
         INFOPLIST_FILE: StreamArc/App/macOS/Info.plist
         DEVELOPMENT_ASSET_PATHS: '"StreamArc/Resources/Preview Content"'
+        VALIDATE_EMBEDDED_BINARY_IDS: NO
     info:
       path: StreamArc/App/macOS/Info.plist
       properties:

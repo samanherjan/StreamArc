@@ -1,5 +1,6 @@
 import StreamArcCore
 import SwiftUI
+import SwiftData
 import Kingfisher
 
 struct MovieDetailView: View {
@@ -13,6 +14,10 @@ struct MovieDetailView: View {
     @State private var tmdbDetail: TMDBDetail?
     @State private var isLoadingDetail = false
     @State private var isFavorite = false
+
+    @Query(filter: #Predicate<Profile> { $0.isActive == true })
+    private var activeProfiles: [Profile]
+    private var activeProfile: Profile? { activeProfiles.first }
 
     var body: some View {
         NavigationStack {
@@ -172,7 +177,7 @@ struct MovieDetailView: View {
                 }
             }
             .background(Color.saBackground)
-#if !os(tvOS)
+#if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
             .toolbar {
@@ -183,9 +188,15 @@ struct MovieDetailView: View {
             .task { await loadDetail() }
             .onAppear { checkFavorite() }
         }
-        .fullScreenCover(isPresented: $showPlayer) {
-            PlayerView(streamURL: item.streamURL, title: item.title)
+#if os(macOS)
+        .sheet(isPresented: $showPlayer) {
+            PlayerView(streamURL: item.streamURL, title: item.title, profile: activeProfile)
         }
+#else
+        .fullScreenCover(isPresented: $showPlayer) {
+            PlayerView(streamURL: item.streamURL, title: item.title, profile: activeProfile)
+        }
+#endif
     }
 
     private func checkFavorite() {

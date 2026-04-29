@@ -27,9 +27,9 @@ struct ParentalLockView: View {
                 if appEnv.settingsStore.parentalLockEnabled {
                     Section("Set PIN") {
                         SecureField("4-digit PIN", text: $pin)
-                            .keyboardType(.numberPad)
+                            .numberPadField()
                         SecureField("Confirm PIN", text: $confirmPin)
-                            .keyboardType(.numberPad)
+                            .numberPadField()
                     }
 
                     if let error {
@@ -58,9 +58,9 @@ struct ParentalLockView: View {
             #endif
             .background(Color.saBackground)
             .navigationTitle("Parental Lock")
-            #if !os(tvOS)
+#if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
+#endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

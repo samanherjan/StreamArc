@@ -416,7 +416,9 @@ private struct ProgramDetailSheet: View {
             }
             .background(Color.saBackground.ignoresSafeArea())
             .navigationTitle(program.title)
+#if os(iOS)
             .navigationBarTitleDisplayMode(.large)
+#endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

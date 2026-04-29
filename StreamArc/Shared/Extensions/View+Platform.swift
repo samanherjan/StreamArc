@@ -95,3 +95,39 @@ extension View {
     func tvFocusScale() -> some View { self }
 }
 #endif
+
+// MARK: - iOS-only input modifiers (no-ops on macOS/tvOS)
+
+extension View {
+    /// Applies `.keyboardType(.URL)` + `.textInputAutocapitalization(.never)` on iOS; no-op elsewhere.
+    @ViewBuilder
+    func urlTextField() -> some View {
+#if os(iOS)
+        self
+            .keyboardType(.URL)
+            .textInputAutocapitalization(.never)
+#else
+        self
+#endif
+    }
+
+    /// Applies `.keyboardType(.numberPad)` on iOS; no-op elsewhere.
+    @ViewBuilder
+    func numberPadField() -> some View {
+#if os(iOS)
+        self.keyboardType(.numberPad)
+#else
+        self
+#endif
+    }
+
+    /// Applies `.textInputAutocapitalization(.never)` on iOS; no-op elsewhere.
+    @ViewBuilder
+    func noAutocapitalization() -> some View {
+#if os(iOS)
+        self.textInputAutocapitalization(.never)
+#else
+        self
+#endif
+    }
+}

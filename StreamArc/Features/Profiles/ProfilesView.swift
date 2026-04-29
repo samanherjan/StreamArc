@@ -25,8 +25,10 @@ struct ProfilesView: View {
                     for i in indexSet { profileToDelete = profiles[i] }
                 }
             }
-            #if !os(tvOS)
+            #if os(iOS)
             .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            #elseif !os(tvOS)
             .scrollContentBackground(.hidden)
             #endif
             .background(Color.saBackground)

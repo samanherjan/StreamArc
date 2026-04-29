@@ -1,5 +1,6 @@
 import StreamArcCore
 import SwiftUI
+import SwiftData
 import Kingfisher
 
 struct LiveTVView: View {
@@ -15,6 +16,10 @@ struct LiveTVView: View {
     @Environment(EntitlementManager.self) private var entitlements
     @Environment(AdsManager.self)          private var adsManager
     @Environment(\.modelContext)           private var modelContext
+
+    @Query(filter: #Predicate<Profile> { $0.isActive == true })
+    private var activeProfiles: [Profile]
+    private var activeProfile: Profile? { activeProfiles.first }
 
     // Pin bar refresh trigger
     @State private var pinBarRefreshID = UUID()
@@ -59,19 +64,35 @@ struct LiveTVView: View {
             .background(Color.saBackground.ignoresSafeArea())
             .searchable(text: $localVM.searchText, prompt: "Search channels")
         }
+#if os(macOS)
+        .sheet(isPresented: $showPlayer) {
+            if let ch = selectedChannel {
+                PlayerView(streamURL: ch.streamURL, title: ch.name, isLiveTV: true,
+                           channel: ch, allChannels: filteredChannels, profile: activeProfile)
+            }
+        }
+        .sheet(isPresented: $showVODPlayer) {
+            if let entry = resumeEntry,
+               let vod = viewModel.vodItems.first(where: { $0.id == entry.contentId }) {
+                PlayerView(streamURL: vod.streamURL, title: vod.title, isLiveTV: false,
+                           startPosition: entry.lastPosition, profile: activeProfile)
+            }
+        }
+#else
         .fullScreenCover(isPresented: $showPlayer) {
             if let ch = selectedChannel {
                 PlayerView(streamURL: ch.streamURL, title: ch.name, isLiveTV: true,
-                           channel: ch, allChannels: filteredChannels)
+                           channel: ch, allChannels: filteredChannels, profile: activeProfile)
             }
         }
         .fullScreenCover(isPresented: $showVODPlayer) {
             if let entry = resumeEntry,
                let vod = viewModel.vodItems.first(where: { $0.id == entry.contentId }) {
                 PlayerView(streamURL: vod.streamURL, title: vod.title, isLiveTV: false,
-                           startPosition: entry.lastPosition)
+                           startPosition: entry.lastPosition, profile: activeProfile)
             }
         }
+#endif
         .paywallSheet(isPresented: $showPaywall)
     }
 
@@ -203,20 +224,6 @@ struct LiveTVView: View {
                 showVODPlayer = true
             }
 
-
-            // Quick-access pin bar
-            FavoritesPinBar(channels: viewModel.channels) { channel in
-                selectedChannel = channel
-                showPlayer = true
-            }
-            .id(pinBarRefreshID)
-
-            // Continue Watching (VOD resume)
-            ContinueWatchingRow { entry in
-                resumeEntry = entry
-                showVODPlayer = true
-            }
-
             // Stats header
             HStack(spacing: 16) {
                 statBadge(
@@ -238,7 +245,13 @@ struct LiveTVView: View {
             .padding(.horizontal)
 
             // Country cards — full width, 2 columns on wider screens
-            let cols = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+#if os(tvOS)
+            let cols = [GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20)]
+#elseif os(macOS)
+            let cols = [GridItem(.adaptive(minimum: 250), spacing: 16)]
+#else
+            let cols = [GridItem(.adaptive(minimum: 160), spacing: 10)]
+#endif
             LazyVGrid(columns: cols, spacing: 10) {
                 ForEach(countries) { country in
                     Button {

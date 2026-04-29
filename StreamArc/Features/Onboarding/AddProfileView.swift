@@ -71,8 +71,7 @@ struct AddProfileView: View {
 
                 Section("EPG (Optional)") {
                     TextField("XMLTV URL", text: $epgURL)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
+                        .urlTextField()
                         .autocorrectionDisabled()
                 }
 
@@ -109,7 +108,7 @@ struct AddProfileView: View {
             #endif
             .background(Color.saBackground)
             .navigationTitle("Add Source")
-            #if !os(tvOS)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
@@ -141,8 +140,7 @@ struct AddProfileView: View {
         case .m3u:
             Section("M3U Source") {
                 TextField("Playlist URL (http://...)", text: $m3uURL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
+                    .urlTextField()
                     .autocorrectionDisabled()
 
                 if let creds = M3UParser.extractXtreamCredentials(from: m3uURL) {
@@ -166,29 +164,26 @@ struct AddProfileView: View {
         case .stalker:
             Section("MAG / Stalker Portal") {
                 TextField("Portal URL", text: $portalURL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
+                    .urlTextField()
                     .autocorrectionDisabled()
                 TextField("MAC Address (00:1A:79:XX:XX:XX)", text: $macAddress)
-                    .textInputAutocapitalization(.never)
+                    .noAutocapitalization()
                     .autocorrectionDisabled()
             }
         case .xtream:
             Section("Xtream Codes") {
                 TextField("Server URL", text: $xtreamURL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
+                    .urlTextField()
                     .autocorrectionDisabled()
                 TextField("Username", text: $xtreamUsername)
-                    .textInputAutocapitalization(.never)
+                    .noAutocapitalization()
                     .autocorrectionDisabled()
                 SecureField("Password", text: $xtreamPassword)
             }
         case .enigma2:
             Section("Enigma2 Box") {
                 TextField("Box IP / URL (http://192.168.1.x)", text: $enigma2URL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
+                    .urlTextField()
                     .autocorrectionDisabled()
             }
         }

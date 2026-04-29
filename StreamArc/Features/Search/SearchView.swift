@@ -1,5 +1,6 @@
 import StreamArcCore
 import SwiftUI
+import SwiftData
 
 struct SearchView: View {
     var viewModel: HomeViewModel
@@ -8,6 +9,10 @@ struct SearchView: View {
     @State private var showPlayer = false
     @State private var selectedVOD: VODItem?
     @State private var selectedSeries: Series?
+
+    @Query(filter: #Predicate<Profile> { $0.isActive == true })
+    private var activeProfiles: [Profile]
+    private var activeProfile: Profile? { activeProfiles.first }
 
     var body: some View {
         NavigationStack {
@@ -56,12 +61,21 @@ struct SearchView: View {
             .navigationTitle("Search")
             .searchable(text: $searchVM.query, prompt: "Channels, movies, series…")
         }
+#if os(macOS)
+        .sheet(isPresented: $showPlayer) {
+            if case .channel(let ch) = selectedResult {
+                PlayerView(streamURL: ch.streamURL, title: ch.name, isLiveTV: true,
+                           channel: ch, allChannels: viewModel.channels, profile: activeProfile)
+            }
+        }
+#else
         .fullScreenCover(isPresented: $showPlayer) {
             if case .channel(let ch) = selectedResult {
                 PlayerView(streamURL: ch.streamURL, title: ch.name, isLiveTV: true,
-                           channel: ch, allChannels: viewModel.channels)
+                           channel: ch, allChannels: viewModel.channels, profile: activeProfile)
             }
         }
+#endif
 #if os(tvOS)
         .fullScreenCover(item: $selectedVOD) { vod in
             MovieDetailView(item: vod)

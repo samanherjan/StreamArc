@@ -57,7 +57,7 @@ struct SettingsView: View {
                         get: { appEnv.settingsStore.tmdbAPIKey },
                         set: { appEnv.settingsStore.tmdbAPIKey = $0 }
                     ))
-                    .textInputAutocapitalization(.never)
+                    .noAutocapitalization()
                     .autocorrectionDisabled()
                     Text("Get your free key at themoviedb.org/settings/api")
                         .font(.caption)
@@ -70,8 +70,7 @@ struct SettingsView: View {
                         get: { appEnv.settingsStore.defaultEPGURL },
                         set: { appEnv.settingsStore.defaultEPGURL = $0 }
                     ))
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
+                    .urlTextField()
                     .autocorrectionDisabled()
                 }
 
