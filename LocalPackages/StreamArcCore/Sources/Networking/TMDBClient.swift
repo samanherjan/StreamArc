@@ -73,16 +73,22 @@ public actor TMDBClient {
         guard !apiKey.isEmpty else { return nil }
         do {
             let mediaType: TMDBMediaType = item.type == .series ? .tv : .movie
+            let cleanTitle = Self.sanitizeTitle(item.title)
             let id: Int?
             if let existing = item.tmdbId {
                 id = existing
             } else {
                 id = item.type == .series
-                    ? try await searchTV(title: item.title, apiKey: apiKey)
-                    : try await searchMovie(title: item.title, year: item.year, apiKey: apiKey)
+                    ? try await searchTV(title: cleanTitle, apiKey: apiKey)
+                    : try await searchMovie(title: cleanTitle, year: item.year, apiKey: apiKey)
             }
-            guard let tmdbId = id else { return nil }
-            let vids = try await videos(tmdbId: tmdbId, mediaType: mediaType, apiKey: apiKey)
+            // If year-specific search fails, retry without year
+            var tmdbId = id
+            if tmdbId == nil, item.year != nil, item.type != .series {
+                tmdbId = try await searchMovie(title: cleanTitle, year: nil, apiKey: apiKey)
+            }
+            guard let finalId = tmdbId else { return nil }
+            let vids = try await videos(tmdbId: finalId, mediaType: mediaType, apiKey: apiKey)
             return vids.first?.key
         } catch {
             return nil
@@ -93,13 +99,14 @@ public actor TMDBClient {
     public func imdbId(for item: VODItem, apiKey: String) async -> String? {
         guard !apiKey.isEmpty else { return nil }
         do {
+            let cleanTitle = Self.sanitizeTitle(item.title)
             let id: Int?
             if let existing = item.tmdbId {
                 id = existing
             } else {
                 id = item.type == .series
-                    ? try await searchTV(title: item.title, apiKey: apiKey)
-                    : try await searchMovie(title: item.title, year: item.year, apiKey: apiKey)
+                    ? try await searchTV(title: cleanTitle, apiKey: apiKey)
+                    : try await searchMovie(title: cleanTitle, year: item.year, apiKey: apiKey)
             }
             guard let tmdbId = id else { return nil }
             let detail = item.type == .series
@@ -109,6 +116,39 @@ public actor TMDBClient {
         } catch {
             return nil
         }
+    }
+
+    // MARK: - Title Sanitization
+
+    /// Cleans IPTV portal titles for TMDB search.
+    private static func sanitizeTitle(_ raw: String) -> String {
+        var title = raw
+        // Remove file extensions
+        for ext in [".mkv", ".avi", ".mp4", ".ts", ".m4v"] {
+            if title.lowercased().hasSuffix(ext) {
+                title = String(title.dropLast(ext.count))
+            }
+        }
+        // Remove [bracketed] content
+        title = title.replacingOccurrences(of: #"\[.*?\]"#, with: "", options: .regularExpression)
+        // Remove (year) or (quality) parentheticals
+        title = title.replacingOccurrences(
+            of: #"\(\d{4}\)"#, with: "", options: .regularExpression)
+        title = title.replacingOccurrences(
+            of: #"\((?:HD|SD|4K|\d+p|CAM|TS|WEB|BluRay|Multi).*?\)"#,
+            with: "", options: [.regularExpression, .caseInsensitive])
+        // Remove quality/codec tags
+        title = title.replacingOccurrences(
+            of: #"\b(720p|1080p|2160p|4K|UHD|HD|SD|WEB-?DL|WEBRip|BluRay|BRRip|DVDRip|HDTV|x264|x265|HEVC|AAC|DTS|10bit|HDR)\b"#,
+            with: "", options: [.regularExpression, .caseInsensitive])
+        // Remove trailing year
+        title = title.replacingOccurrences(of: #"\s*\d{4}\s*$"#, with: "", options: .regularExpression)
+        // Dots/underscores to spaces
+        title = title.replacingOccurrences(of: ".", with: " ")
+        title = title.replacingOccurrences(of: "_", with: " ")
+        // Collapse whitespace
+        title = title.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+        return title.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Convenience: returns the first YouTube trailer URL for the given item.
