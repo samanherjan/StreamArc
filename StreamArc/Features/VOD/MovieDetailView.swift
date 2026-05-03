@@ -190,11 +190,11 @@ struct MovieDetailView: View {
         }
 #if os(macOS)
         .sheet(isPresented: $showPlayer) {
-            PlayerView(streamURL: item.streamURL, title: item.title, profile: activeProfile)
+            PlayerView(streamURL: item.streamURL, title: item.title, profile: activeProfile, contentId: item.id, posterURL: item.posterURL, historyContentType: "vod")
         }
 #else
         .fullScreenCover(isPresented: $showPlayer) {
-            PlayerView(streamURL: item.streamURL, title: item.title, profile: activeProfile)
+            PlayerView(streamURL: item.streamURL, title: item.title, profile: activeProfile, contentId: item.id, posterURL: item.posterURL, historyContentType: "vod")
         }
 #endif
     }

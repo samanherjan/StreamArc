@@ -16,6 +16,10 @@ final class HomeViewModel {
     var epgMap:   [String: [EPGProgram]] = [:]
     var loadState: LoadState = .idle
 
+    // Progress reporting for the splash screen
+    var loadStatus:   String = "Connecting…"
+    var loadProgress: Double = 0.0
+
     private var activeProfile: Profile?
     private var epgCache: (url: String, date: Date, programs: [EPGProgram])?
     private static let epgCacheTTL: TimeInterval = 43_200  // 12 hours
@@ -30,20 +34,48 @@ final class HomeViewModel {
         guard loadState != .loading else { return }
         activeProfile = profile
         loadState = .loading
+        loadProgress = 0.05
+        loadStatus = "Connecting to \(profile.name)…"
         channels = []
         vodItems = []
         series   = []
 
+        // Animate progress while content loads
+        let progressTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let steps: [(Double, String)] = [
+                (0.15, "Authenticating…"),
+                (0.30, "Loading channels…"),
+                (0.50, "Loading movies…"),
+                (0.70, "Loading series…"),
+                (0.85, "Almost ready…"),
+            ]
+            for (target, msg) in steps {
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                guard self.loadState == .loading else { break }
+                self.loadProgress = target
+                self.loadStatus = msg
+            }
+        }
+
         do {
             let service = Self.makeContentService(for: profile)
-
-            // For Stalker/Xtream: load content (channels+VOD+series load concurrently inside)
             let result = try await service.loadContent()
+            progressTask.cancel()
+
             channels = result.channels
             vodItems = result.vodItems
             series   = result.series
 
-            // Show content immediately — EPG loads in background
+            let ch  = channels.count
+            let vod = vodItems.filter { $0.type == .movie }.count
+            let ser = series.count
+            loadStatus   = "\(ch) channels · \(vod) movies · \(ser) series — Ready!"
+            loadProgress = 1.0
+
+            // Brief pause so the user sees the 'Ready' message
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+
             loadState = .loaded
             profile.lastLoadedAt = .now
 
@@ -54,6 +86,7 @@ final class HomeViewModel {
                 self.applyEPG()
             }
         } catch {
+            progressTask.cancel()
             loadState = .error(error.localizedDescription)
         }
     }

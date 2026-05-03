@@ -12,6 +12,12 @@ public actor TMDBClient {
     private var videoCache: [Int: [TMDBVideo]] = [:]
     private var searchCache: [String: Int] = [:]    // "title_year" → tmdbId
     private var detailCache: [Int: TMDBDetail] = [:]
+    private var castCache: [Int: [TMDBCastMember]] = [:]
+    private var similarCache: [Int: [TMDBSimilarItem]] = [:]
+    private var ratingCache: [Int: String] = [:]
+    private var trendingMoviesCache: (date: Date, items: [TMDBTrendingItem])?
+    private var trendingTVCache: (date: Date, items: [TMDBTrendingItem])?
+    private static let trendingCacheTTL: TimeInterval = 3600 // 1 hour
 
     public init(session: URLSession = .shared) {
         self.session = session
@@ -118,6 +124,14 @@ public actor TMDBClient {
         }
     }
 
+    /// Returns the IMDb ID directly from a known TMDB ID (no VODItem needed).
+    public func imdbIdDirect(tmdbId: Int, mediaType: TMDBMediaType, apiKey: String) async throws -> String? {
+        let detail = mediaType == .tv
+            ? try await tvDetail(tmdbId: tmdbId, apiKey: apiKey)
+            : try await movieDetail(tmdbId: tmdbId, apiKey: apiKey)
+        return detail.imdbId
+    }
+
     // MARK: - Title Sanitization
 
     /// Cleans IPTV portal titles for TMDB search.
@@ -129,19 +143,25 @@ public actor TMDBClient {
                 title = String(title.dropLast(ext.count))
             }
         }
-        // Remove common portal prefixes (TOP - , NEW - , HOT - , VIP - , etc.)
+        // Remove generic portal prefixes: any combo of word chars / dots / digits
+        // followed by a dash separator, e.g. "4K.AMZ-", "FHD.NF-", "TOP-", "VOD:"
+        // Must appear at the very start of the string.
         title = title.replacingOccurrences(
-            of: #"^(?:TOP|NEW|HOT|VIP|BEST|HIT|FR|EN|DE|ES|AR|TR|NL)\s*[-:|]\s*"#,
+            of: #"^[\w.]+\s*[-:|]\s*"#,
             with: "", options: [.regularExpression, .caseInsensitive])
         // Remove [bracketed] content
         title = title.replacingOccurrences(of: #"\[.*?\]"#, with: "", options: .regularExpression)
-        // Remove (year) or (quality) parentheticals
+        // Remove trailing country code in parens: (US), (UK), (FR), (DE), …
+        title = title.replacingOccurrences(
+            of: #"\s*\([A-Z]{2,3}\)\s*$"#, with: "", options: .regularExpression)
+        // Remove (year) parentheticals
         title = title.replacingOccurrences(
             of: #"\(\d{4}\)"#, with: "", options: .regularExpression)
+        // Remove (quality/format) parentheticals
         title = title.replacingOccurrences(
             of: #"\((?:HD|SD|4K|\d+p|CAM|TS|WEB|BluRay|Multi).*?\)"#,
             with: "", options: [.regularExpression, .caseInsensitive])
-        // Remove quality/codec tags
+        // Remove quality/codec tags standing alone as words
         title = title.replacingOccurrences(
             of: #"\b(720p|1080p|2160p|4K|UHD|HD|SD|WEB-?DL|WEBRip|BluRay|BRRip|DVDRip|HDTV|x264|x265|HEVC|AAC|DTS|10bit|HDR)\b"#,
             with: "", options: [.regularExpression, .caseInsensitive])
@@ -233,6 +253,113 @@ public actor TMDBClient {
         }
     }
 
+    // MARK: - Cast & Crew
+
+    public func cast(tmdbId: Int, mediaType: TMDBMediaType, apiKey: String) async throws -> [TMDBCastMember] {
+        if let cached = castCache[tmdbId] { return cached }
+        let url = URL(string: "\(baseURL)/\(mediaType.rawValue)/\(tmdbId)/credits?api_key=\(apiKey)")!
+        let response: TMDBCreditsResponse = try await decode(from: url)
+        let members = Array(response.cast.prefix(15))
+        castCache[tmdbId] = members
+        return members
+    }
+
+    // MARK: - Similar
+
+    public func similar(tmdbId: Int, mediaType: TMDBMediaType, apiKey: String) async throws -> [TMDBSimilarItem] {
+        if let cached = similarCache[tmdbId] { return cached }
+        let url = URL(string: "\(baseURL)/\(mediaType.rawValue)/\(tmdbId)/similar?api_key=\(apiKey)")!
+        let response: TMDBSimilarResponse = try await decode(from: url)
+        let items = Array(response.results.prefix(20))
+        similarCache[tmdbId] = items
+        return items
+    }
+
+    // MARK: - Content Rating
+
+    /// Returns the US content rating (e.g. "PG-13", "TV-MA") for the item.
+    public func contentRating(tmdbId: Int, mediaType: TMDBMediaType, apiKey: String) async throws -> String? {
+        if let cached = ratingCache[tmdbId] { return cached }
+        let rating: String?
+        if mediaType == .movie {
+            let url = URL(string: "\(baseURL)/movie/\(tmdbId)/release_dates?api_key=\(apiKey)")!
+            let response: TMDBReleaseDatesResponse = try await decode(from: url)
+            rating = response.results
+                .first { $0.iso31661 == "US" }?
+                .releaseDates
+                .first { !$0.certification.isEmpty }?
+                .certification
+        } else {
+            let url = URL(string: "\(baseURL)/tv/\(tmdbId)/content_ratings?api_key=\(apiKey)")!
+            let response: TMDBContentRatingsResponse = try await decode(from: url)
+            rating = response.results.first { $0.iso31661 == "US" }?.rating
+        }
+        if let rating { ratingCache[tmdbId] = rating }
+        return rating
+    }
+
+    // MARK: - Trending
+
+    public func trendingMovies(timeWindow: String = "week", apiKey: String) async throws -> [TMDBTrendingItem] {
+        let now = Date()
+        if let cache = trendingMoviesCache, now.timeIntervalSince(cache.date) < Self.trendingCacheTTL {
+            return cache.items
+        }
+        let url = URL(string: "\(baseURL)/trending/movie/\(timeWindow)?api_key=\(apiKey)")!
+        let response: TMDBTrendingResponse = try await decode(from: url)
+        trendingMoviesCache = (date: now, items: response.results)
+        return response.results
+    }
+
+    public func trendingTV(timeWindow: String = "week", apiKey: String) async throws -> [TMDBTrendingItem] {
+        let now = Date()
+        if let cache = trendingTVCache, now.timeIntervalSince(cache.date) < Self.trendingCacheTTL {
+            return cache.items
+        }
+        let url = URL(string: "\(baseURL)/trending/tv/\(timeWindow)?api_key=\(apiKey)")!
+        let response: TMDBTrendingResponse = try await decode(from: url)
+        trendingTVCache = (date: now, items: response.results)
+        return response.results
+    }
+
+    public func nowPlayingMovies(apiKey: String) async throws -> [TMDBTrendingItem] {
+        let url = URL(string: "\(baseURL)/movie/now_playing?api_key=\(apiKey)&language=en-US&page=1")!
+        let response: TMDBTrendingResponse = try await decode(from: url)
+        return response.results
+    }
+
+    public func popularTV(apiKey: String) async throws -> [TMDBTrendingItem] {
+        let url = URL(string: "\(baseURL)/tv/popular?api_key=\(apiKey)&language=en-US&page=1")!
+        let response: TMDBTrendingResponse = try await decode(from: url)
+        return response.results
+    }
+
+    public func topRatedMovies(apiKey: String) async throws -> [TMDBTrendingItem] {
+        let url = URL(string: "\(baseURL)/movie/top_rated?api_key=\(apiKey)&language=en-US&page=1")!
+        let response: TMDBTrendingResponse = try await decode(from: url)
+        return response.results
+    }
+
+    public func topRatedTV(apiKey: String) async throws -> [TMDBTrendingItem] {
+        let url = URL(string: "\(baseURL)/tv/top_rated?api_key=\(apiKey)&language=en-US&page=1")!
+        let response: TMDBTrendingResponse = try await decode(from: url)
+        return response.results
+    }
+
+    // MARK: - Genre Lists
+
+    public func movieGenreMap(apiKey: String) async throws -> [Int: String] {
+        let url = URL(string: "\(baseURL)/genre/movie/list?api_key=\(apiKey)&language=en")!
+        let response: TMDBGenreListResponse = try await decode(from: url)
+        return Dictionary(uniqueKeysWithValues: response.genres.map { ($0.id, $0.name) })
+    }
+
+    public func tvGenreMap(apiKey: String) async throws -> [Int: String] {
+        let url = URL(string: "\(baseURL)/genre/tv/list?api_key=\(apiKey)&language=en")!
+        let response: TMDBGenreListResponse = try await decode(from: url)
+        return Dictionary(uniqueKeysWithValues: response.genres.map { ($0.id, $0.name) })
+    }
+
     // MARK: - Networking
 
     private func decode<T: Decodable>(from url: URL) async throws -> T {
@@ -278,6 +405,7 @@ public struct TMDBDetail: Decodable, Sendable {
     public let numberOfSeasons: Int?     // tv
     public let tagline: String?
     public let status: String?
+    public let backdropPath: String?
 
     enum CodingKeys: String, CodingKey {
         case id, overview, genres, runtime, tagline, status
@@ -286,6 +414,7 @@ public struct TMDBDetail: Decodable, Sendable {
         case releaseDate = "release_date"
         case firstAirDate = "first_air_date"
         case numberOfSeasons = "number_of_seasons"
+        case backdropPath = "backdrop_path"
     }
 
     public var yearString: String? {
@@ -293,9 +422,132 @@ public struct TMDBDetail: Decodable, Sendable {
         guard let date, date.count >= 4 else { return nil }
         return String(date.prefix(4))
     }
+
+    public var backdropURL: URL? {
+        backdropPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w1280\($0)") }
+    }
 }
 
 public struct TMDBGenre: Decodable, Sendable {
     public let id: Int
     public let name: String
+}
+
+// MARK: - Trending Item
+
+public struct TMDBTrendingItem: Decodable, Identifiable, Sendable {
+    public let id: Int
+    public let title: String?          // movies
+    public let name: String?           // TV
+    public let overview: String?
+    public let posterPath: String?
+    public let backdropPath: String?
+    public let voteAverage: Double?
+    public let releaseDate: String?
+    public let firstAirDate: String?
+    public let mediaType: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, name, overview, mediaType = "media_type"
+        case posterPath   = "poster_path"
+        case backdropPath = "backdrop_path"
+        case voteAverage  = "vote_average"
+        case releaseDate  = "release_date"
+        case firstAirDate = "first_air_date"
+    }
+
+    public var displayTitle: String { title ?? name ?? "Unknown" }
+
+    public var posterURL: URL? {
+        guard let p = posterPath else { return nil }
+        return URL(string: "https://image.tmdb.org/t/p/w342\(p)")
+    }
+    public var backdropURL: URL? {
+        guard let b = backdropPath else { return nil }
+        return URL(string: "https://image.tmdb.org/t/p/w1280\(b)")
+    }
+    public var yearString: String? {
+        let d = releaseDate ?? firstAirDate
+        guard let d, d.count >= 4 else { return nil }
+        return String(d.prefix(4))
+    }
+}
+
+private struct TMDBTrendingResponse: Decodable {
+    let results: [TMDBTrendingItem]
+}
+
+private struct TMDBGenreListResponse: Decodable {
+    let genres: [TMDBGenre]
+}
+
+// MARK: - Cast & Similar
+
+public struct TMDBCastMember: Decodable, Identifiable, Sendable {
+    public let id: Int
+    public let name: String
+    public let character: String?
+    public let profilePath: String?
+    enum CodingKeys: String, CodingKey {
+        case id, name, character
+        case profilePath = "profile_path"
+    }
+    public var profileURL: URL? {
+        profilePath.flatMap { URL(string: "https://image.tmdb.org/t/p/w185\($0)") }
+    }
+}
+
+private struct TMDBCreditsResponse: Decodable {
+    let cast: [TMDBCastMember]
+}
+
+public struct TMDBSimilarItem: Decodable, Identifiable, Sendable {
+    public let id: Int
+    public let title: String?
+    public let name: String?
+    public let posterPath: String?
+    public let voteAverage: Double?
+    enum CodingKeys: String, CodingKey {
+        case id, title, name
+        case posterPath  = "poster_path"
+        case voteAverage = "vote_average"
+    }
+    public var displayTitle: String { title ?? name ?? "Unknown" }
+    public var posterURL: URL? {
+        posterPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w342\($0)") }
+    }
+}
+
+private struct TMDBSimilarResponse: Decodable {
+    let results: [TMDBSimilarItem]
+}
+
+// MARK: - Content Ratings
+
+private struct TMDBReleaseDatesResponse: Decodable {
+    struct Country: Decodable {
+        let iso31661: String
+        struct ReleaseDate: Decodable {
+            let certification: String
+            enum CodingKeys: String, CodingKey { case certification }
+        }
+        let releaseDates: [ReleaseDate]
+        enum CodingKeys: String, CodingKey {
+            case iso31661 = "iso_3166_1"
+            case releaseDates = "release_dates"
+        }
+    }
+    let results: [Country]
+}
+
+private struct TMDBContentRatingsResponse: Decodable {
+    struct Rating: Decodable {
+        let iso31661: String
+        let rating: String
+        enum CodingKeys: String, CodingKey {
+            case iso31661 = "iso_3166_1"
+            case rating
+        }
+    }
+    let results: [Rating]
 }

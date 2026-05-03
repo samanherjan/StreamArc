@@ -219,7 +219,7 @@ struct LiveTVView: View {
             .id(pinBarRefreshID)
 
             // Continue Watching (VOD resume)
-            ContinueWatchingRow { entry in
+            ContinueWatchingRow { entry, _ in
                 resumeEntry = entry
                 showVODPlayer = true
             }

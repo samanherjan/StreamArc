@@ -14,8 +14,13 @@ struct PlayerView: View {
     /// Resume position in seconds; 0 = start from beginning.
     var startPosition: Double = 0
     /// Pass the active profile directly to eliminate the @Query race condition.
-    /// When provided this is used instead of the internal @Query result.
     var profile: Profile? = nil
+    /// Content ID for watch history (VOD item ID or episode ID).
+    var contentId: String? = nil
+    /// Poster/thumbnail URL for watch history display.
+    var posterURL: String? = nil
+    /// Content type for watch history ("vod", "episode").
+    var historyContentType: String? = nil
 
     @StateObject private var viewModel = PlayerViewModelBridge()
     @Environment(\.dismiss) private var dismiss
@@ -492,13 +497,14 @@ struct PlayerView: View {
 
     private func saveWatchProgress() {
         guard !isLiveTV else { return }
-        let contentId = channel?.id ?? streamURL
+        let id = contentId ?? channel?.id ?? streamURL
+        let type = historyContentType ?? (isLiveTV ? "channel" : "vod")
         let mgr = WatchHistoryManager(modelContext: modelContext)
         try? mgr.record(
-            contentId: contentId,
-            contentType: isLiveTV ? "channel" : "vod",
+            contentId: id,
+            contentType: type,
             title: title,
-            imageURL: nil,
+            imageURL: posterURL,
             position: viewModel.vm.currentTime,
             duration: viewModel.vm.duration
         )

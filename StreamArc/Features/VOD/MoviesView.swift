@@ -1,381 +1,495 @@
 import StreamArcCore
 import SwiftUI
+import SwiftData
 import Kingfisher
+
+// MARK: - MoviesView
 
 struct MoviesView: View {
 
     var viewModel: HomeViewModel
-    @State private var localVM = VODViewModel()
+
+    @Environment(AppEnvironment.self)     private var appEnv
+    @Environment(EntitlementManager.self) private var entitlements
+
     @State private var selectedItem: VODItem?
     @State private var showPaywall = false
+    @State private var trendingMovies: [TMDBTrendingItem] = []
+    @State private var nowInTheatres: [TMDBTrendingItem] = []
+    @State private var selectedTMDB: TMDBTrendingItem?
+    @State private var heroIndex: Int = 0
+    @State private var cachedGroupedMovies: [(category: String, items: [VODItem])] = []
+    @State private var allMovies: [VODItem] = []
 
-    @Environment(EntitlementManager.self) private var entitlements
-    @Environment(AdsManager.self)          private var adsManager
+    // Resume from Continue Watching
+    @State private var resumeItem: VODItem?
+    @State private var resumePosition: Double = 0
 
-    var movies: [VODItem] {
-        localVM.filteredMovies(from: viewModel.vodItems, isPremium: entitlements.isPremium)
+    @Query(sort: \FavoriteItem.addedAt, order: .reverse) private var favoriteItems: [FavoriteItem]
+
+    private var apiKey: String {
+        appEnv.settingsStore.tmdbAPIKey.isEmpty ? APIKeys.tmdb : appEnv.settingsStore.tmdbAPIKey
+    }
+    private var heroItems: [TMDBTrendingItem] { Array(trendingMovies.prefix(6)) }
+
+    private var recentlyAdded: [VODItem] {
+        Array(viewModel.vodItems.filter { $0.type == .movie }.suffix(9).reversed())
+    }
+    private var favoriteMovies: [VODItem] {
+        let ids = Set(favoriteItems.filter { $0.contentType == "vod" }.map(\.contentId))
+        return viewModel.vodItems.filter { ids.contains($0.id) }
+    }
+    /// Now In Theatres: TMDB items that have a match in the library
+    private var nowInTheatresInLibrary: [TMDBTrendingItem] {
+        nowInTheatres.filter { item in
+            viewModel.vodItems.contains {
+                $0.type == .movie && (
+                    $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
+                    item.displayTitle.localizedCaseInsensitiveContains($0.title)
+                )
+            }
+        }
     }
 
-    /// Movies grouped by category, preserving group order
-    var groupedMovies: [(category: String, items: [VODItem])] {
-        let allMovies = localVM.filteredMovies(from: viewModel.vodItems, isPremium: entitlements.isPremium, ignoreGroupFilter: true)
-        var dict: [String: [VODItem]] = [:]
-        var order: [String] = []
-        for movie in allMovies {
-            let key = movie.groupTitle.isEmpty ? "Uncategorized" : movie.groupTitle
-            if dict[key] == nil { order.append(key) }
-            dict[key, default: []].append(movie)
+    private func rebuildCache() {
+        let all = viewModel.vodItems
+        let isPremium = entitlements.isPremium
+        Task.detached(priority: .userInitiated) {
+            var movies = all.filter { $0.type == .movie }
+            if !isPremium { movies = Array(movies.prefix(50)) }
+            var dict: [String: [VODItem]] = [:]
+            for m in movies {
+                let key = m.groupTitle.isEmpty ? "Uncategorized" : m.groupTitle
+                dict[key, default: []].append(m)
+            }
+            // Sort alphabetically
+            let keys = dict.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            let grouped = keys.map { (category: $0, items: dict[$0]!) }
+            await MainActor.run {
+                self.allMovies = movies
+                self.cachedGroupedMovies = grouped
+            }
         }
-        return order.map { (category: $0, items: dict[$0]!) }
+    }
+
+    var body: some View {
+        ZStack {
+            Color.saBackground.ignoresSafeArea()
+            switch viewModel.loadState {
+            case .idle, .loading:
+                ScrollView { ShimmerGrid(columns: 3).padding(.top, 20) }
+            case .error(let msg):
+                ErrorView(message: msg)
+            case .loaded:
+                mainContent
+            }
+        }
+        .task {
+            if case .loaded = viewModel.loadState { rebuildCache() }
+            await loadTMDB()
+        }
+        .onChange(of: viewModel.loadState) { _, s in if case .loaded = s { rebuildCache() } }
+        .onChange(of: entitlements.isPremium) { _, _ in rebuildCache() }
+        #if os(macOS)
+        .sheet(item: $selectedItem) { MovieDetailView(item: $0) }
+        .sheet(item: $selectedTMDB) { i in TMDBDiscoverySheet(item: i, vodItems: viewModel.vodItems) { selectedItem = $0 } }
+        .sheet(item: $resumeItem) { item in
+            PlayerView(streamURL: item.streamURL, title: item.title, startPosition: resumePosition,
+                       contentId: item.id, posterURL: item.posterURL, historyContentType: "vod")
+        }
+        #else
+        .fullScreenCover(item: $selectedItem) { MovieDetailView(item: $0) }
+        .sheet(item: $selectedTMDB) { i in TMDBDiscoverySheet(item: i, vodItems: viewModel.vodItems) { selectedItem = $0 } }
+        .fullScreenCover(item: $resumeItem) { item in
+            PlayerView(streamURL: item.streamURL, title: item.title, startPosition: resumePosition,
+                       contentId: item.id, posterURL: item.posterURL, historyContentType: "vod")
+        }
+        #endif
+        .paywallSheet(isPresented: $showPaywall)
+    }
+
+    // MARK: - Main content (ordered per spec)
+
+    private var mainContent: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 0) {
+
+                // 1. Hero Banner
+                if !heroItems.isEmpty {
+                    MoviesHeroCarousel(items: heroItems, heroIndex: $heroIndex) { selectedTMDB = $0 }
+                        .padding(.bottom, 28)
+                }
+
+                // 2. Continue Watching
+                ContinueWatchingRow { entry, _ in
+                    if let match = viewModel.vodItems.first(where: { $0.id == entry.contentId }) {
+                        resumePosition = entry.lastPosition
+                        resumeItem = match
+                    }
+                }
+                .padding(.bottom, 4)
+
+                // 3. Favourites
+                if !favoriteMovies.isEmpty {
+                    PlexShelfSection(title: "My Favourites", icon: "star.fill", iconColor: .yellow) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(alignment: .top, spacing: 10) {
+                                ForEach(favoriteMovies) { item in
+                                    Button { selectedItem = item } label: { MovieIPTVPosterCard(item: item) }
+                                        .cardFocusable()
+                                }
+                            }
+                            .padding(.horizontal).padding(.vertical, 4)
+                        }
+                    }
+                    .padding(.bottom, 28)
+                }
+
+                // 4. Trending Now
+                if !trendingMovies.isEmpty {
+                    PlexShelfSection(title: "Trending Now", icon: "flame.fill", iconColor: .orange) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(alignment: .top, spacing: 10) {
+                                ForEach(trendingMovies) { item in
+                                    Button { selectedTMDB = item } label: { MovieTMDBPosterCard(item: item) }
+                                        .cardFocusable()
+                                }
+                            }
+                            .padding(.horizontal).padding(.vertical, 4)
+                        }
+                    }
+                    .padding(.bottom, 28)
+                }
+
+                // 5. Now In Theatres (library matches only)
+                if !nowInTheatresInLibrary.isEmpty {
+                    PlexShelfSection(title: "Now In Theatres", icon: "popcorn.fill", iconColor: .red) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(alignment: .top, spacing: 10) {
+                                ForEach(nowInTheatresInLibrary) { item in
+                                    Button { selectedTMDB = item } label: { MovieTMDBPosterCard(item: item) }
+                                        .cardFocusable()
+                                }
+                            }
+                            .padding(.horizontal).padding(.vertical, 4)
+                        }
+                    }
+                    .padding(.bottom, 28)
+                }
+
+                // 6. Recently Added
+                if !recentlyAdded.isEmpty {
+                    PlexShelfSection(title: "Recently Added", icon: "clock.fill", iconColor: .blue) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(alignment: .top, spacing: 10) {
+                                ForEach(recentlyAdded) { item in
+                                    Button { selectedItem = item } label: { MovieIPTVPosterCard(item: item) }
+                                        .cardFocusable()
+                                }
+                            }
+                            .padding(.horizontal).padding(.vertical, 4)
+                        }
+                    }
+                    .padding(.bottom, 28)
+                }
+
+                // 7. Your Library (All first, then alphabetical categories)
+                if !cachedGroupedMovies.isEmpty || !allMovies.isEmpty {
+                    PlexShelfSection(title: "Your Library", icon: "square.grid.2x2.fill", iconColor: Color.saAccent) {
+                        EmptyView()
+                    }
+                    categoryBrowserGrid.padding(.bottom, 28)
+                } else if viewModel.vodItems.isEmpty {
+                    EmptyContentView(title: "No Movies Found",
+                                     subtitle: "Your source didn't return any movies.",
+                                     systemImage: "film.fill")
+                }
+
+                Spacer(minLength: 60)
+            }
+        }
+    }
+
+    // MARK: - Category browser grid
+
+    private var categoryBrowserGrid: some View {
+        let cols: [GridItem] = {
+            #if os(tvOS)
+            return Array(repeating: GridItem(.flexible(), spacing: 20), count: 4)
+            #elseif os(macOS)
+            return Array(repeating: GridItem(.flexible(), spacing: 16), count: 4)
+            #else
+            return Array(repeating: GridItem(.flexible(), spacing: 12), count: 2)
+            #endif
+        }()
+        return LazyVGrid(columns: cols, spacing: 16) {
+            // "All Movies" card — always first
+            NavigationLink(destination: MovieCategoryDetailView(category: "All Movies", movies: allMovies)) {
+                AllCategoryCard(title: "All Movies", icon: "film.fill", count: allMovies.count)
+            }
+            .cardFocusable()
+
+            // Alphabetical categories
+            ForEach(cachedGroupedMovies, id: \.category) { group in
+                NavigationLink(destination: MovieCategoryDetailView(category: group.category, movies: group.items)) {
+                    CategoryBrowserCard(title: group.category, count: group.items.count,
+                                        samplePosters: group.items.prefix(4).map(\.posterURL))
+                }
+                .cardFocusable()
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    private func loadTMDB() async {
+        guard !apiKey.isEmpty else { return }
+        async let trending = (try? await TMDBClient.shared.trendingMovies(apiKey: apiKey)) ?? []
+        async let theatres = (try? await TMDBClient.shared.nowPlayingMovies(apiKey: apiKey)) ?? []
+        let (t, n) = await (trending, theatres)
+        if trendingMovies.isEmpty { trendingMovies = t }
+        if nowInTheatres.isEmpty  { nowInTheatres = n }
+    }
+}
+
+// MARK: - Hero Carousel
+
+private struct MoviesHeroCarousel: View {
+    let items: [TMDBTrendingItem]
+    @Binding var heroIndex: Int
+    let onTap: (TMDBTrendingItem) -> Void
+
+    private var hero: TMDBTrendingItem { items[heroIndex % items.count] }
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            Group {
+                if let url = hero.backdropURL ?? hero.posterURL {
+                    KFImage(url).resizable().placeholder { ShimmerCard() }
+                        .fade(duration: 0.4).scaledToFill()
+                } else { Rectangle().fill(Color.saSurface) }
+            }
+            .frame(maxWidth: .infinity).frame(height: 320).clipped()
+            .animation(.easeInOut(duration: 0.5), value: heroIndex)
+
+            LinearGradient(stops: [.init(color: .clear, location: 0.2),
+                                   .init(color: Color.saBackground.opacity(0.7), location: 0.65),
+                                   .init(color: Color.saBackground, location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 5) {
+                    Image(systemName: "sparkles").font(.caption.bold()).foregroundStyle(Color.saAccent)
+                    Text("Featured").font(.caption.bold()).foregroundStyle(Color.saAccent)
+                }
+                Text(hero.displayTitle).font(.system(size: 26, weight: .heavy))
+                    .foregroundStyle(.white).lineLimit(2)
+                if let ov = hero.overview, !ov.isEmpty {
+                    Text(ov).font(.caption).foregroundStyle(.white.opacity(0.72)).lineLimit(2)
+                }
+                HStack(spacing: 12) {
+                    Button { onTap(hero) } label: {
+                        HStack(spacing: 6) { Image(systemName: "play.fill"); Text("Watch Now") }
+                            .font(.subheadline.bold()).foregroundStyle(Color.saBackground)
+                            .padding(.horizontal, 20).padding(.vertical, 11)
+                            .background(.white).clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain).cardFocusable()
+                    if let r = hero.voteAverage, r > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill").foregroundStyle(.yellow)
+                            Text(String(format: "%.1f", r)).foregroundStyle(.white)
+                        }
+                        .font(.caption.bold()).padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(Color.white.opacity(0.14)).clipShape(Capsule())
+                    }
+                    Spacer()
+                    if items.count > 1 {
+                        HStack(spacing: 5) {
+                            ForEach(0..<items.count, id: \.self) { i in
+                                Capsule()
+                                    .fill(i == heroIndex % items.count ? Color.white : Color.white.opacity(0.3))
+                                    .frame(width: i == heroIndex % items.count ? 18 : 6, height: 6)
+                                    .animation(.spring(response: 0.3), value: heroIndex)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, hEdge).padding(.bottom, 20)
+        }
+        .frame(maxWidth: .infinity).frame(height: 320)
+        .task(id: items.count) {
+            guard items.count > 1 else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_500_000_000)
+                guard !Task.isCancelled else { return }
+                heroIndex = (heroIndex + 1) % items.count
+            }
+        }
+    }
+
+    private var hEdge: CGFloat { 20 }
+}
+
+// MARK: - All Category Card
+
+struct AllCategoryCard: View {
+    let title: String
+    let icon: String
+    let count: Int
+
+    @Environment(\.isFocused) private var isFocused
+
+    private let gradient = LinearGradient(
+        colors: [Color.saAccent.opacity(0.9), Color.saAccent.opacity(0.5)],
+        startPoint: .topLeading, endPoint: .bottomTrailing
+    )
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Card face — coloured background with icon
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(gradient)
+                    .aspectRatio(16/9, contentMode: .fit)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(isFocused ? Color.white.opacity(0.6) : Color.white.opacity(0.15), lineWidth: 1.5)
+                    )
+                VStack(spacing: 8) {
+                    Image(systemName: icon)
+                        .font(.system(size: 32, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text(title)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            // Count label
+            Text("\(count) \(count == 1 ? "title" : "titles")")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.saTextSecondary)
+        }
+        .padding(.bottom, 4)
+    }
+}
+
+// MARK: - Poster Cards (shared)
+
+struct MovieTMDBPosterCard: View {
+    let item: TMDBTrendingItem
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack(alignment: .bottomLeading) {
+                if let url = item.posterURL {
+                    KFImage(url).resizable().placeholder { ShimmerCard() }.fade(duration: 0.25).scaledToFill()
+                } else {
+                    Rectangle().fill(Color.saSurface)
+                }
+                LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .center, endPoint: .bottom)
+                if let r = item.voteAverage, r > 0 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "star.fill").font(.system(size: 8, weight: .bold)).foregroundStyle(.yellow)
+                        Text(String(format: "%.1f", r)).font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(Color.black.opacity(0.6)).clipShape(Capsule()).padding(7)
+                }
+            }
+            .aspectRatio(2/3, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.07), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+            Text(item.displayTitle).font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.saTextPrimary).lineLimit(2)
+        }
+        .frame(width: cardWidth)
+    }
+    private var cardWidth: CGFloat { 120 }
+}
+
+struct MovieIPTVPosterCard: View {
+    let item: VODItem
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack(alignment: .bottom) {
+                if let u = item.posterURL, let url = URL(string: u) {
+                    KFImage(url).resizable().placeholder { ShimmerCard() }.fade(duration: 0.25).scaledToFill()
+                } else {
+                    Rectangle().fill(Color.saSurface)
+                        .overlay { Image(systemName: "film").font(.title2).foregroundStyle(Color.saTextSecondary.opacity(0.3)) }
+                }
+                LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
+                Text(item.title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
+                    .lineLimit(2).padding(.horizontal, 8).padding(.bottom, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .aspectRatio(2/3, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.07), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+        }
+        .frame(width: cardWidth)
+    }
+    private var cardWidth: CGFloat { 120 }
+}
+
+// MARK: - TMDB Discovery Sheet
+
+struct TMDBDiscoverySheet: View {
+    let item: TMDBTrendingItem
+    let vodItems: [VODItem]
+    var onMatchFound: (VODItem) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var match: VODItem? {
+        vodItems.first {
+            $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
+            item.displayTitle.localizedCaseInsensitiveContains($0.title)
+        }
     }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Group {
-                    switch viewModel.loadState {
-                    case .idle, .loading:
-                        ScrollView {
-                            ShimmerGrid(columns: 3)
-                                .padding(.top, 20)
-                        }
-                    case .error(let msg):
-                        ErrorView(message: msg)
-                    case .loaded:
-                        if viewModel.vodItems.isEmpty {
-                            EmptyContentView(
-                                title: "No Movies Found",
-                                subtitle: "Your source didn't return any movies. Check your source settings and try again.",
-                                systemImage: "film.fill"
-                            )
-                        } else {
-                            movieContent
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if let url = item.backdropURL ?? item.posterURL {
+                        KFImage(url).resizable().scaledToFill()
+                            .frame(maxWidth: .infinity).frame(height: 200).clipped()
+                            .overlay(LinearGradient(colors: [.clear, Color.saBackground],
+                                                    startPoint: .center, endPoint: .bottom))
                     }
-                }
-
-#if !os(tvOS)
-                BannerAdView()
-#endif
-            }
-            .background(Color.saBackground.ignoresSafeArea())
-            .searchable(text: $localVM.searchText, prompt: "Search movies")
-#if os(tvOS)
-            .fullScreenCover(item: $selectedItem) { item in
-                MovieDetailView(item: item)
-            }
-#else
-            .sheet(item: $selectedItem) { item in
-                MovieDetailView(item: item)
-            }
-#endif
-        }
-    }
-
-    // MARK: - Movie content
-
-    private var movieContent: some View {
-        Group {
-            if !localVM.searchText.isEmpty {
-                // Search results: flat grid
-                searchResults
-            } else {
-                // Browse: Netflix-style rows
-                browseView
-            }
-        }
-    }
-
-    // MARK: - Browse (Netflix-style)
-
-    private var browseView: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 28) {
-                // Continue Watching
-                ContinueWatchingRow()
-
-                // Featured hero
-                if let featured = groupedMovies.first?.items.first {
-                    FeaturedHeroView(item: featured) {
-                        selectedItem = featured
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(item.displayTitle).font(.title2.bold()).foregroundStyle(Color.saTextPrimary)
+                        HStack(spacing: 12) {
+                            if let r = item.voteAverage, r > 0 {
+                                Label(String(format: "%.1f", r), systemImage: "star.fill")
+                                    .foregroundStyle(.yellow).font(.subheadline)
+                            }
+                            if let y = item.yearString { Text(y).foregroundStyle(Color.saTextSecondary).font(.subheadline) }
+                        }
+                        if let ov = item.overview { Text(ov).font(.body).foregroundStyle(Color.saTextSecondary) }
+                        if let v = match {
+                            Button { dismiss(); onMatchFound(v) } label: {
+                                Label("Watch in Your Library", systemImage: "play.circle.fill")
+                                    .font(.headline).frame(maxWidth: .infinity).padding()
+                                    .background(Color.saAccent).foregroundStyle(.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                            }.buttonStyle(.plain)
+                        } else {
+                            Label("Not in your library", systemImage: "xmark.circle")
+                                .foregroundStyle(Color.saTextSecondary).font(.subheadline)
+                        }
                     }
                     .padding(.horizontal)
                 }
-
-                // Category rows
-                ForEach(groupedMovies, id: \.category) { group in
-                    MovieRowSection(
-                        title: group.category,
-                        items: group.items,
-                        onSelect: { selectedItem = $0 }
-                    )
-                }
-
-                // Upgrade prompt
-                if localVM.isAtFreeCap(items: viewModel.vodItems, isPremium: entitlements.isPremium) {
-                    upgradeRow
-                }
-
-                Spacer(minLength: 40)
             }
-            .padding(.top, 8)
+            .background(Color.saBackground.ignoresSafeArea())
+            .navigationTitle(item.displayTitle)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
         }
-        .background(Color.saBackground)
-    }
-
-    // MARK: - Search results
-
-    private var searchResults: some View {
-        let cols = [GridItem(.adaptive(minimum: 110, maximum: 160), spacing: 14)]
-        return Group {
-            if movies.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 40))
-                        .foregroundStyle(Color.saTextSecondary.opacity(0.5))
-                    Text("No results for \"\(localVM.searchText)\"")
-                        .font(.callout)
-                        .foregroundStyle(Color.saTextSecondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: cols, spacing: 14) {
-                        ForEach(movies) { item in
-                            MoviePosterCard(item: item) {
-                                selectedItem = item
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                }
-                .background(Color.saBackground)
-            }
-        }
-    }
-
-    // MARK: - Upgrade row
-
-    private var upgradeRow: some View {
-        Button { showPaywall = true } label: {
-            HStack(spacing: 16) {
-                Image(systemName: "sparkles")
-                    .font(.title2)
-                    .foregroundStyle(Color.saAccent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Unlock All Movies")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(Color.saTextPrimary)
-                    Text("Upgrade to StreamArc+ for unlimited access")
-                        .font(.caption)
-                        .foregroundStyle(Color.saTextSecondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.bold())
-                    .foregroundStyle(Color.saAccent)
-            }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.saAccent.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.saAccent.opacity(0.2), lineWidth: 1)
-                    )
-            )
-            .padding(.horizontal)
-        }
-        .cardFocusable()
-        .paywallSheet(isPresented: $showPaywall)
-    }
-}
-
-// MARK: - Featured Hero View
-
-private struct FeaturedHeroView: View {
-    let item: VODItem
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            ZStack(alignment: .bottomLeading) {
-                // Background poster
-                if let posterURL = item.posterURL, let url = URL(string: posterURL) {
-                    KFImage(url)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(height: 220)
-                        .clipped()
-                } else {
-                    Rectangle()
-                        .fill(Color.saSurface)
-                        .frame(height: 220)
-                }
-
-                // Gradient overlay
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.3),
-                        .init(color: Color.saBackground.opacity(0.85), location: 0.7),
-                        .init(color: Color.saBackground, location: 1.0)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-
-                // Content
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Featured")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.saAccent)
-                        .textCase(.uppercase)
-                        .tracking(1.2)
-
-                    Text(item.title)
-                        .font(.title2.bold())
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-
-                    HStack(spacing: 12) {
-                        Label("Play", systemImage: "play.fill")
-                            .font(.subheadline.bold())
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(Color.saAccent)
-                            .clipShape(Capsule())
-
-                        if let year = item.year {
-                            Text(String(year))
-                                .font(.caption)
-                                .foregroundStyle(Color.saTextSecondary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Capsule())
-                        }
-                    }
-                }
-                .padding(20)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        }
-        .cardFocusable()
-    }
-}
-
-// MARK: - Movie Row Section (horizontal scroll)
-
-private struct MovieRowSection: View {
-    let title: String
-    let items: [VODItem]
-    let onSelect: (VODItem) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Section header
-            HStack {
-                Text(title)
-                    .font(.title3.bold())
-                    .foregroundStyle(Color.saTextPrimary)
-                Spacer()
-                Text("\(items.count)")
-                    .font(.caption)
-                    .foregroundStyle(Color.saTextSecondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.saCard)
-                    .clipShape(Capsule())
-            }
-            .padding(.horizontal)
-
-            // Horizontal poster scroll
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
-                    ForEach(items) { item in
-                        MoviePosterCard(item: item) {
-                            onSelect(item)
-                        }
-                        .frame(width: 130)
-                    }
-                }
-                .padding(.horizontal)
-            }
-        }
-    }
-}
-
-// MARK: - Movie Poster Card (modern)
-
-private struct MoviePosterCard: View {
-    let item: VODItem
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 6) {
-                // Poster
-                ZStack(alignment: .bottomLeading) {
-                    if let posterURL = item.posterURL, let url = URL(string: posterURL) {
-                        KFImage(url)
-                            .resizable()
-                            .placeholder { ShimmerCard() }
-                            .fade(duration: 0.25)
-                            .scaledToFill()
-                    } else {
-                        Rectangle()
-                            .fill(Color.saSurface)
-                            .overlay {
-                                Image(systemName: "film")
-                                    .font(.title2)
-                                    .foregroundStyle(Color.saTextSecondary.opacity(0.3))
-                            }
-                    }
-
-                    // Subtle gradient at bottom
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.5)],
-                        startPoint: .center,
-                        endPoint: .bottom
-                    )
-
-                    // Year badge
-                    if let year = item.year {
-                        Text(String(year))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.9))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.ultraThinMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .padding(8)
-                    }
-                }
-                .aspectRatio(2/3, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
-                )
-                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-                .scaleEffect(isHovered ? 1.05 : 1.0)
-                .animation(.spring(response: 0.3), value: isHovered)
-
-                // Title
-                Text(item.title)
-                    .font(.caption)
-                    .foregroundStyle(Color.saTextSecondary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .cardFocusable()
-#if os(macOS)
-        .onHover { isHovered = $0 }
-#endif
     }
 }
