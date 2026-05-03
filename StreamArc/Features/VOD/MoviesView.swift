@@ -268,13 +268,14 @@ private struct MoviesHeroCarousel: View {
                         .fade(duration: 0.4).scaledToFill()
                 } else { Rectangle().fill(Color.saSurface) }
             }
-            .frame(maxWidth: .infinity).frame(height: 320).clipped()
+            .frame(maxWidth: .infinity).frame(height: bannerHeight).clipped()
             .animation(.easeInOut(duration: 0.5), value: heroIndex)
 
-            LinearGradient(stops: [.init(color: .clear, location: 0.2),
+            LinearGradient(stops: [.init(color: .clear, location: 0.15),
                                    .init(color: Color.saBackground.opacity(0.7), location: 0.65),
                                    .init(color: Color.saBackground, location: 1)],
                            startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [Color.saBackground.opacity(0.4), .clear], startPoint: .leading, endPoint: .trailing)
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 5) {
@@ -283,6 +284,21 @@ private struct MoviesHeroCarousel: View {
                 }
                 Text(hero.displayTitle).font(.system(size: 26, weight: .heavy))
                     .foregroundStyle(.white).lineLimit(2)
+                    .shadow(color: .black.opacity(0.5), radius: 6)
+
+                // Year + Rating
+                HStack(spacing: 8) {
+                    if let year = hero.releaseYear {
+                        Text(year).font(.caption.bold()).foregroundStyle(Color.saTextSecondary)
+                    }
+                    if let r = hero.voteAverage, r > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                            Text(String(format: "%.1f", r)).font(.caption.bold()).foregroundStyle(.white)
+                        }
+                    }
+                }
+
                 if let ov = hero.overview, !ov.isEmpty {
                     Text(ov).font(.caption).foregroundStyle(.white.opacity(0.72)).lineLimit(2)
                 }
@@ -293,7 +309,7 @@ private struct MoviesHeroCarousel: View {
                             .padding(.horizontal, 20).padding(.vertical, 11)
                             .background(.white).clipShape(Capsule())
                     }
-                    .buttonStyle(.plain).cardFocusable()
+                    .cardFocusable()
                     if let r = hero.voteAverage, r > 0 {
                         HStack(spacing: 4) {
                             Image(systemName: "star.fill").foregroundStyle(.yellow)
@@ -317,7 +333,7 @@ private struct MoviesHeroCarousel: View {
             }
             .padding(.horizontal, hEdge).padding(.bottom, 20)
         }
-        .frame(maxWidth: .infinity).frame(height: 320)
+        .frame(maxWidth: .infinity).frame(height: bannerHeight)
         .task(id: items.count) {
             guard items.count > 1 else { return }
             while !Task.isCancelled {
@@ -329,6 +345,14 @@ private struct MoviesHeroCarousel: View {
     }
 
     private var hEdge: CGFloat { 20 }
+
+    private var bannerHeight: CGFloat {
+        #if os(tvOS)
+        return 500
+        #else
+        return 340
+        #endif
+    }
 }
 
 // MARK: - All Category Card
@@ -379,59 +403,131 @@ struct AllCategoryCard: View {
 struct MovieTMDBPosterCard: View {
     let item: TMDBTrendingItem
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ZStack(alignment: .bottomLeading) {
+        VStack(alignment: .leading, spacing: 5) {
+            ZStack(alignment: .topTrailing) {
                 if let url = item.posterURL {
                     KFImage(url).resizable().placeholder { ShimmerCard() }.fade(duration: 0.25).scaledToFill()
                 } else {
                     Rectangle().fill(Color.saSurface)
+                        .overlay(Image(systemName: "film").font(.title2).foregroundStyle(Color.saTextSecondary.opacity(0.3)))
                 }
-                LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .center, endPoint: .bottom)
+                // Rating badge top-right
                 if let r = item.voteAverage, r > 0 {
                     HStack(spacing: 3) {
                         Image(systemName: "star.fill").font(.system(size: 8, weight: .bold)).foregroundStyle(.yellow)
                         Text(String(format: "%.1f", r)).font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
                     }
                     .padding(.horizontal, 6).padding(.vertical, 3)
-                    .background(Color.black.opacity(0.6)).clipShape(Capsule()).padding(7)
+                    .background(Color.black.opacity(0.72)).clipShape(Capsule()).padding(6)
                 }
             }
             .aspectRatio(2/3, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.07), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
-            Text(item.displayTitle).font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.saTextPrimary).lineLimit(2)
+
+            // Title below poster - clearly visible
+            Text(item.displayTitle)
+                .font(.system(size: titleFontSize, weight: .semibold))
+                .foregroundStyle(Color.saTextPrimary)
+                .lineLimit(2)
+
+            // Year below title
+            if let year = item.releaseYear {
+                Text(year)
+                    .font(.system(size: metaFontSize, weight: .medium))
+                    .foregroundStyle(Color.saTextSecondary)
+            }
         }
         .frame(width: cardWidth)
     }
-    private var cardWidth: CGFloat { 120 }
+
+    private var cardWidth: CGFloat {
+        #if os(tvOS)
+        return 180
+        #elseif os(macOS)
+        return 150
+        #else
+        return 120
+        #endif
+    }
+    private var titleFontSize: CGFloat {
+        #if os(tvOS)
+        return 14
+        #else
+        return 11
+        #endif
+    }
+    private var metaFontSize: CGFloat {
+        #if os(tvOS)
+        return 12
+        #else
+        return 10
+        #endif
+    }
 }
 
 struct MovieIPTVPosterCard: View {
     let item: VODItem
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ZStack(alignment: .bottom) {
+        VStack(alignment: .leading, spacing: 5) {
+            // Poster image — clean, no title overlay
+            Group {
                 if let u = item.posterURL, let url = URL(string: u) {
                     KFImage(url).resizable().placeholder { ShimmerCard() }.fade(duration: 0.25).scaledToFill()
                 } else {
                     Rectangle().fill(Color.saSurface)
                         .overlay { Image(systemName: "film").font(.title2).foregroundStyle(Color.saTextSecondary.opacity(0.3)) }
                 }
-                LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
-                Text(item.title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
-                    .lineLimit(2).padding(.horizontal, 8).padding(.bottom, 7)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .aspectRatio(2/3, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.07), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+
+            // Title below poster — clearly readable
+            Text(item.title)
+                .font(.system(size: titleFontSize, weight: .semibold))
+                .foregroundStyle(Color.saTextPrimary)
+                .lineLimit(2)
+
+            // Genre tag
+            if !item.groupTitle.isEmpty {
+                Text(item.groupTitle)
+                    .font(.system(size: metaFontSize, weight: .medium))
+                    .foregroundStyle(Color.saAccent)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.saAccent.opacity(0.12))
+                    .clipShape(Capsule())
+            }
         }
         .frame(width: cardWidth)
     }
-    private var cardWidth: CGFloat { 120 }
+
+    private var cardWidth: CGFloat {
+        #if os(tvOS)
+        return 180
+        #elseif os(macOS)
+        return 150
+        #else
+        return 120
+        #endif
+    }
+    private var titleFontSize: CGFloat {
+        #if os(tvOS)
+        return 14
+        #else
+        return 11
+        #endif
+    }
+    private var metaFontSize: CGFloat {
+        #if os(tvOS)
+        return 11
+        #else
+        return 9
+        #endif
+    }
 }
 
 // MARK: - TMDB Discovery Sheet

@@ -304,6 +304,8 @@ struct DashboardView: View {
     }
 
     var body: some View {
+        ZStack {
+            Color.saBackground.ignoresSafeArea()
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 0) {
                     // Hero carousel
@@ -354,7 +356,7 @@ struct DashboardView: View {
                                         Button { selectedChannel = ch; showChannelPlayer = true } label: {
                                             LiveNowCard(channel: ch)
                                         }
-                                        .buttonStyle(.plain).cardFocusable()
+                                        .cardFocusable()
                                     }
                                 }
                                 .padding(.horizontal).padding(.vertical, 4)
@@ -408,7 +410,7 @@ struct DashboardView: View {
                     Spacer(minLength: 60)
             }
         }
-        .ignoresSafeArea(edges: .top)
+        }
         .background(Color.saBackground.ignoresSafeArea())
         .task { await loadTrending() }
         .sheet(item: $selectedVOD) { MovieDetailView(item: $0) }
@@ -456,6 +458,30 @@ private struct DashboardHero: View {
 
     private var hero: TMDBTrendingItem { items[heroIndex % items.count] }
 
+    private var bannerHeight: CGFloat {
+        #if os(tvOS)
+        return 520
+        #else
+        return 340
+        #endif
+    }
+
+    private var titleFont: Font {
+        #if os(tvOS)
+        return .system(size: 48, weight: .heavy)
+        #else
+        return .system(size: 26, weight: .heavy)
+        #endif
+    }
+
+    private var hPad: CGFloat {
+        #if os(tvOS)
+        return 60
+        #else
+        return 20
+        #endif
+    }
+
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Group {
@@ -464,40 +490,73 @@ private struct DashboardHero: View {
                         .fade(duration: 0.4).scaledToFill()
                 } else { Rectangle().fill(Color.saSurface) }
             }
-            .frame(maxWidth: .infinity).frame(height: 320).clipped()
+            .frame(maxWidth: .infinity).frame(height: bannerHeight).clipped()
             .animation(.easeInOut(duration: 0.5), value: heroIndex)
 
-            LinearGradient(stops: [.init(color: .clear, location: 0.2),
-                                   .init(color: Color.saBackground.opacity(0.7), location: 0.65),
+            LinearGradient(stops: [.init(color: .clear, location: 0.15),
+                                   .init(color: Color.saBackground.opacity(0.65), location: 0.6),
                                    .init(color: Color.saBackground, location: 1)],
                            startPoint: .top, endPoint: .bottom)
+            // Side gradient for readability
+            LinearGradient(colors: [Color.saBackground.opacity(0.45), .clear],
+                           startPoint: .leading, endPoint: .trailing)
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Featured badge
                 HStack(spacing: 5) {
                     Image(systemName: "sparkles").font(.caption.bold()).foregroundStyle(Color.saAccent)
                     Text("Featured").font(.caption.bold()).foregroundStyle(Color.saAccent)
                 }
-                Text(hero.displayTitle).font(.system(size: 26, weight: .heavy))
-                    .foregroundStyle(.white).lineLimit(2)
+
+                // Title
+                Text(hero.displayTitle)
+                    .font(titleFont)
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .shadow(color: .black.opacity(0.5), radius: 6)
+
+                // Year + Genre metadata row
+                HStack(spacing: 8) {
+                    if let year = hero.releaseYear {
+                        Text(year)
+                            .font(.caption.bold())
+                            .foregroundStyle(Color.saTextSecondary)
+                    }
+                    if let r = hero.voteAverage, r > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "star.fill").font(.system(size: 9, weight: .bold)).foregroundStyle(.yellow)
+                            Text(String(format: "%.1f", r)).font(.caption.bold()).foregroundStyle(.white)
+                        }
+                    }
+                }
+
+                // Overview (brief)
+                if let overview = hero.overview, !overview.isEmpty {
+                    Text(overview)
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.72))
+                        .lineLimit(2)
+                        .shadow(color: .black.opacity(0.4), radius: 4)
+                }
 
                 HStack(spacing: 12) {
                     Button { onTap(hero) } label: {
                         HStack(spacing: 6) { Image(systemName: "play.fill"); Text("Watch Now") }
-                            .font(.subheadline.bold()).foregroundStyle(Color.saBackground)
+                            #if os(tvOS)
+                            .font(.system(size: 20, weight: .bold))
+                            .padding(.horizontal, 32).padding(.vertical, 16)
+                            #else
+                            .font(.subheadline.bold())
                             .padding(.horizontal, 20).padding(.vertical, 11)
+                            #endif
+                            .foregroundStyle(Color.saBackground)
                             .background(.white).clipShape(Capsule())
                     }
-                    .buttonStyle(.plain).cardFocusable()
+                    .cardFocusable()
 
-                    if let r = hero.voteAverage, r > 0 {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill").foregroundStyle(.yellow)
-                            Text(String(format: "%.1f", r)).foregroundStyle(.white)
-                        }
-                        .font(.caption.bold()).padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(Color.white.opacity(0.14)).clipShape(Capsule())
-                    }
                     Spacer()
+
+                    // Page dots
                     if items.count > 1 {
                         HStack(spacing: 5) {
                             ForEach(0..<items.count, id: \.self) { i in
@@ -510,9 +569,14 @@ private struct DashboardHero: View {
                     }
                 }
             }
-            .padding(.horizontal, 20).padding(.bottom, 24)
+            .padding(.horizontal, hPad)
+            #if os(tvOS)
+            .padding(.bottom, 50)
+            #else
+            .padding(.bottom, 24)
+            #endif
         }
-        .frame(maxWidth: .infinity).frame(height: 320)
+        .frame(maxWidth: .infinity).frame(height: bannerHeight)
         .task(id: items.count) {
             guard items.count > 1 else { return }
             while !Task.isCancelled {
