@@ -75,11 +75,19 @@ struct SeriesView: View {
             await loadTMDB()
         }
         .onChange(of: viewModel.loadState) { _, s in if case .loaded = s { rebuildCache() } }
+        #if os(tvOS)
+        .fullScreenCover(item: $selectedSeries) { SeriesDetailView(series: $0) }
+        #else
         .sheet(item: $selectedSeries) { SeriesDetailView(series: $0) }
+        #endif
         .sheet(item: $selectedTMDB) { i in
             SeriesTMDBDiscoverySheet(item: i, seriesLibrary: viewModel.series) { selectedSeries = $0 }
         }
+        #if os(tvOS)
+        .fullScreenCover(item: $resumeSeries) { SeriesDetailView(series: $0) }
+        #else
         .sheet(item: $resumeSeries) { SeriesDetailView(series: $0) }
+        #endif
         #if os(macOS)
         .sheet(isPresented: Binding(
             get: { resumeEpisode != nil },

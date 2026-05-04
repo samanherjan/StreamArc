@@ -499,8 +499,13 @@ struct DashboardView: View {
             #endif
         }
         .task { await loadTrending() }
+        #if os(tvOS)
+        .fullScreenCover(item: $selectedVOD) { MovieDetailView(item: $0) }
+        .fullScreenCover(item: $selectedSeries) { SeriesDetailView(series: $0) }
+        #else
         .sheet(item: $selectedVOD) { MovieDetailView(item: $0) }
         .sheet(item: $selectedSeries) { SeriesDetailView(series: $0) }
+        #endif
         .sheet(item: $resumeVOD) { item in
             PlayerView(streamURL: item.streamURL, title: item.title,
                        posterURL: item.posterURL, contentType: "vod",

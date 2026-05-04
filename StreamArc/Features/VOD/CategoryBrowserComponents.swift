@@ -167,6 +167,8 @@ struct SeriesCategoryDetailView: View {
         #endif
         #if os(macOS)
         .sheet(item: $selectedSeries) { SeriesDetailView(series: $0) }
+        #elseif os(tvOS)
+        .fullScreenCover(item: $selectedSeries) { SeriesDetailView(series: $0) }
         #else
         .sheet(item: $selectedSeries) { SeriesDetailView(series: $0) }
         #endif
