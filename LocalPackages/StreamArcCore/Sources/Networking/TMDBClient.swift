@@ -492,184 +492,19 @@ private struct TMDBGenreListResponse: Decodable {
     let genres: [TMDBGenre]
 }
 
-// MARK: - Content Ratings
+// MARK: - Cast & Similar
 
-private struct TMDBReleaseDatesResponse: Decodable {
-    struct Country: Decodable {
-        let iso31661: String
-        struct ReleaseDate: Decodable {
-            let certification: String
-            enum CodingKeys: String, CodingKey { case certification }
-        }
-        let releaseDates: [ReleaseDate]
-        enum CodingKeys: String, CodingKey {
-            case iso31661 = "iso_3166_1"
-            case releaseDates = "release_dates"
-        }
-    }
-    let results: [Country]
-}
-
-private struct TMDBContentRatingsResponse: Decodable {
-    struct Rating: Decodable {
-        let iso31661: String
-        let rating: String
-        enum CodingKeys: String, CodingKey {
-            case iso31661 = "iso_3166_1"
-            case rating
-        }
-    }
-    let results: [Rating]
-    // MARK: - Trending
-
-    public func trendingMovies(timeWindow: String = "week", apiKey: String) async throws -> [TMDBTrendingItem] {
-        let now = Date()
-        if let cache = trendingMoviesCache, now.timeIntervalSince(cache.date) < Self.trendingCacheTTL {
-            return cache.items
-        }
-        let url = URL(string: "\(baseURL)/trending/movie/\(timeWindow)?api_key=\(apiKey)")!
-        let response: TMDBTrendingResponse = try await decode(from: url)
-        trendingMoviesCache = (date: now, items: response.results)
-        return response.results
-    }
-
-    public func trendingTV(timeWindow: String = "week", apiKey: String) async throws -> [TMDBTrendingItem] {
-        let now = Date()
-        if let cache = trendingTVCache, now.timeIntervalSince(cache.date) < Self.trendingCacheTTL {
-            return cache.items
-        }
-        let url = URL(string: "\(baseURL)/trending/tv/\(timeWindow)?api_key=\(apiKey)")!
-        let response: TMDBTrendingResponse = try await decode(from: url)
-        trendingTVCache = (date: now, items: response.results)
-        return response.results
-    }
-
-    public func nowPlayingMovies(apiKey: String) async throws -> [TMDBTrendingItem] {
-        let url = URL(string: "\(baseURL)/movie/now_playing?api_key=\(apiKey)&language=en-US&page=1")!
-        let response: TMDBTrendingResponse = try await decode(from: url)
-        return response.results
-    }
-
-    public func popularTV(apiKey: String) async throws -> [TMDBTrendingItem] {
-        let url = URL(string: "\(baseURL)/tv/popular?api_key=\(apiKey)&language=en-US&page=1")!
-        let response: TMDBTrendingResponse = try await decode(from: url)
-        return response.results
-    }
-
-    public func topRatedMovies(apiKey: String) async throws -> [TMDBTrendingItem] {
-        let url = URL(string: "\(baseURL)/movie/top_rated?api_key=\(apiKey)&language=en-US&page=1")!
-        let response: TMDBTrendingResponse = try await decode(from: url)
-        return response.results
-    }
-
-    public func topRatedTV(apiKey: String) async throws -> [TMDBTrendingItem] {
-        let url = URL(string: "\(baseURL)/tv/top_rated?api_key=\(apiKey)&language=en-US&page=1")!
-        let response: TMDBTrendingResponse = try await decode(from: url)
-        return response.results
-    }
-
-    // MARK: - Genre Lists
-
-    public func movieGenreMap(apiKey: String) async throws -> [Int: String] {
-        let url = URL(string: "\(baseURL)/genre/movie/list?api_key=\(apiKey)&language=en")!
-        let response: TMDBGenreListResponse = try await decode(from: url)
-        return Dictionary(uniqueKeysWithValues: response.genres.map { ($0.id, $0.name) })
-    }
-
-    public func tvGenreMap(apiKey: String) async throws -> [Int: String] {
-        let url = URL(string: "\(baseURL)/genre/tv/list?api_key=\(apiKey)&language=en")!
-        let response: TMDBGenreListResponse = try await decode(from: url)
-        return Dictionary(uniqueKeysWithValues: response.genres.map { ($0.id, $0.name) })
-    }
-
-    // MARK: - Networking
-
-    private func decode<T: Decodable>(from url: URL) async throws -> T {
-        let (data, _) = try await session.data(from: url)
-        return try JSONDecoder().decode(T.self, from: data)
-    }
-}
-
-// MARK: - TMDB types
-
-public enum TMDBMediaType: String, Sendable {
-    case movie, tv
-}
-
-public struct TMDBSearchResponse: Decodable {
-    let results: [TMDBSearchResult]
-}
-
-public struct TMDBSearchResult: Decodable {
-    let id: Int
-}
-
-public struct TMDBVideoResponse: Decodable {
-    let results: [TMDBVideo]
-}
-
-public struct TMDBVideo: Decodable, Sendable {
-    public let key: String
-    public let site: String
-    public let type: String
-    public let name: String
-}
-
-public struct TMDBDetail: Decodable, Sendable {
-    public let id: Int
-    public let imdbId: String?
-    public let overview: String?
-    public let voteAverage: Double?
-    public let releaseDate: String?      // movie
-    public let firstAirDate: String?     // tv
-    public let genres: [TMDBGenre]?
-    public let runtime: Int?             // movie
-    public let numberOfSeasons: Int?     // tv
-    public let tagline: String?
-    public let status: String?
-    public let backdropPath: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, overview, genres, runtime, tagline, status
-        case imdbId = "imdb_id"
-        case voteAverage = "vote_average"
-        case releaseDate = "release_date"
-        case firstAirDate = "first_air_date"
-        case numberOfSeasons = "number_of_seasons"
-        case backdropPath = "backdrop_path"
-    }
-
-    public var yearString: String? {
-        let date = releaseDate ?? firstAirDate
-        guard let date, date.count >= 4 else { return nil }
-        return String(date.prefix(4))
-    }
-
-    public var backdropURL: URL? {
-        backdropPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w1280\($0)") }
-    }
-}
-
-public struct TMDBGenre: Decodable, Sendable {
-    public let id: Int
-    public let name: String
-}
-
-// MARK: - Cast
-
-public struct TMDBCastMember: Decodable, Sendable {
+public struct TMDBCastMember: Decodable, Identifiable, Sendable {
     public let id: Int
     public let name: String
     public let character: String?
     public let profilePath: String?
-
-    public var profileURL: URL? {
-        profilePath.flatMap { URL(string: "https://image.tmdb.org/t/p/w185\($0)") }
-    }
-
     enum CodingKeys: String, CodingKey {
         case id, name, character
         case profilePath = "profile_path"
+    }
+    public var profileURL: URL? {
+        profilePath.flatMap { URL(string: "https://image.tmdb.org/t/p/w185\($0)") }
     }
 }
 
@@ -677,79 +512,25 @@ private struct TMDBCreditsResponse: Decodable {
     let cast: [TMDBCastMember]
 }
 
-// MARK: - Similar
-
-public struct TMDBSimilarItem: Identifiable, Decodable, Sendable {
+public struct TMDBSimilarItem: Decodable, Identifiable, Sendable {
     public let id: Int
     public let title: String?
     public let name: String?
     public let posterPath: String?
-
+    public let voteAverage: Double?
+    enum CodingKeys: String, CodingKey {
+        case id, title, name
+        case posterPath  = "poster_path"
+        case voteAverage = "vote_average"
+    }
     public var displayTitle: String { title ?? name ?? "Unknown" }
     public var posterURL: URL? {
         posterPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w342\($0)") }
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case id, title, name
-        case posterPath = "poster_path"
     }
 }
 
 private struct TMDBSimilarResponse: Decodable {
     let results: [TMDBSimilarItem]
-}
-
-// MARK: - Trending
-
-public struct TMDBTrendingItem: Identifiable, Decodable, Sendable {
-    public let id: Int
-    public let title: String?
-    public let name: String?
-    public let posterPath: String?
-    public let backdropPath: String?
-    public let genreIds: [Int]?
-    public let voteAverage: Double?
-    public let voteCount: Int?
-    public let overview: String?
-    public let releaseDate: String?   // "YYYY-MM-DD" for movies
-    public let firstAirDate: String?  // "YYYY-MM-DD" for TV
-
-    public var displayTitle: String { title ?? name ?? "Unknown" }
-    public var posterURL: URL? {
-        posterPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w342\($0)") }
-    }
-    public var backdropURL: URL? {
-        backdropPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w780\($0)") }
-    }
-    public func primaryGenre(from map: [Int: String]) -> String? {
-        genreIds?.compactMap { map[$0] }.first
-    }
-    /// Returns the 4-digit year string, e.g. "2024"
-    public var releaseYear: String? {
-        let dateStr = releaseDate ?? firstAirDate ?? ""
-        guard dateStr.count >= 4 else { return nil }
-        return String(dateStr.prefix(4))
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case id, title, name, overview
-        case posterPath = "poster_path"
-        case backdropPath = "backdrop_path"
-        case genreIds = "genre_ids"
-        case voteAverage = "vote_average"
-        case voteCount = "vote_count"
-        case releaseDate = "release_date"
-        case firstAirDate = "first_air_date"
-    }
-}
-
-private struct TMDBTrendingResponse: Decodable {
-    let results: [TMDBTrendingItem]
-}
-
-private struct TMDBGenreListResponse: Decodable {
-    let genres: [TMDBGenre]
 }
 
 // MARK: - Content Ratings

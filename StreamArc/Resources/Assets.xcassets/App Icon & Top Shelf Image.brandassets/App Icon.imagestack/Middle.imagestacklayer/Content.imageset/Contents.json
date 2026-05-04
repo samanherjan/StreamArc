@@ -1,10 +1,12 @@
 {
   "images" : [
     {
+      "filename" : "AppIcon_tv_middle_1x 1.jpeg",
       "idiom" : "tv",
       "scale" : "1x"
     },
     {
+      "filename" : "AppIcon_tv_middle_1x 2.jpeg",
       "idiom" : "tv",
       "scale" : "2x"
     }

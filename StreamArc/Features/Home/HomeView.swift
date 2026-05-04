@@ -417,8 +417,8 @@ struct DashboardView: View {
         .sheet(item: $selectedSeries) { SeriesDetailView(series: $0) }
         .sheet(item: $resumeVOD) { item in
             PlayerView(streamURL: item.streamURL, title: item.title,
-                       startPosition: resumeVODPosition, contentId: item.id,
-                       posterURL: item.posterURL, historyContentType: "vod")
+                       posterURL: item.posterURL, contentType: "vod",
+                       startPosition: resumeVODPosition, contentId: item.id)
         }
         .fullScreenCover(isPresented: Binding(
             get: { resumeEpisode != nil },
@@ -426,15 +426,15 @@ struct DashboardView: View {
         )) {
             if let ep = resumeEpisode {
                 PlayerView(streamURL: ep.streamURL, title: ep.title,
-                           startPosition: ep.position, posterURL: ep.posterURL,
-                           historyContentType: "episode")
+                           posterURL: ep.posterURL, contentType: "episode",
+                           startPosition: ep.position)
             }
         }
         .fullScreenCover(isPresented: $showChannelPlayer) {
             if let ch = selectedChannel {
-                PlayerView(streamURL: ch.streamURL, title: ch.name, isLiveTV: true,
-                           channel: ch, allChannels: viewModel.channels,
-                           posterURL: ch.logoURL)
+                PlayerView(streamURL: ch.streamURL, title: ch.name,
+                           posterURL: ch.logoURL, isLiveTV: true,
+                           channel: ch, allChannels: viewModel.channels)
             }
         }
     }
@@ -658,9 +658,9 @@ struct EPGTabView: View {
             .navigationTitle("EPG")
             .fullScreenCover(isPresented: $showPlayer) {
                 if let ch = selectedChannel {
-                    PlayerView(streamURL: ch.streamURL, title: ch.name, isLiveTV: true,
-                               channel: ch, allChannels: viewModel.channels,
-                               posterURL: ch.logoURL)
+                    PlayerView(streamURL: ch.streamURL, title: ch.name,
+                               posterURL: ch.logoURL, isLiveTV: true,
+                               channel: ch, allChannels: viewModel.channels)
                 }
             }
         }

@@ -94,15 +94,15 @@ struct MoviesView: View {
         .sheet(item: $selectedItem) { MovieDetailView(item: $0) }
         .sheet(item: $selectedTMDB) { i in TMDBDiscoverySheet(item: i, vodItems: viewModel.vodItems) { selectedItem = $0 } }
         .sheet(item: $resumeItem) { item in
-            PlayerView(streamURL: item.streamURL, title: item.title, startPosition: resumePosition,
-                       contentId: item.id, posterURL: item.posterURL, historyContentType: "vod")
+            PlayerView(streamURL: item.streamURL, title: item.title, posterURL: item.posterURL,
+                       contentType: "vod", startPosition: resumePosition, contentId: item.id)
         }
         #else
         .fullScreenCover(item: $selectedItem) { MovieDetailView(item: $0) }
         .sheet(item: $selectedTMDB) { i in TMDBDiscoverySheet(item: i, vodItems: viewModel.vodItems) { selectedItem = $0 } }
         .fullScreenCover(item: $resumeItem) { item in
-            PlayerView(streamURL: item.streamURL, title: item.title, startPosition: resumePosition,
-                       contentId: item.id, posterURL: item.posterURL, historyContentType: "vod")
+            PlayerView(streamURL: item.streamURL, title: item.title, posterURL: item.posterURL,
+                       contentType: "vod", startPosition: resumePosition, contentId: item.id)
         }
         #endif
         .paywallSheet(isPresented: $showPaywall)

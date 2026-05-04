@@ -25,6 +25,8 @@ final class PlayerViewModel: NSObject {
     /// The PlayerView reads this to present a KSPlayer-based view instead of AVPlayer.
     private(set) var ksPlayerURL: URL?
     private(set) var ksPlayerOptions: KSOptions?
+    /// Coordinator shared with KSVideoPlayerView so the view can pass it without recreating it.
+    private(set) var ksPlayerCoordinator: KSVideoPlayer.Coordinator?
 
     var currentChannelIndex: Int = 0
     private var allChannels: [Channel] = []
@@ -184,6 +186,7 @@ final class PlayerViewModel: NSObject {
 
                 self.ksPlayerURL = resolvedURL
                 self.ksPlayerOptions = options
+                if self.ksPlayerCoordinator == nil { self.ksPlayerCoordinator = KSVideoPlayer.Coordinator() }
                 self.isLoading = false
                 self.isPlaying = true
                 playerLog.debug("🎬 Stalker Live TV (KSPlayer): \(resolvedURL.absoluteString.prefix(150), privacy: .public)")
@@ -201,6 +204,7 @@ final class PlayerViewModel: NSObject {
 
                 self.ksPlayerURL = finalURL
                 self.ksPlayerOptions = options
+                if self.ksPlayerCoordinator == nil { self.ksPlayerCoordinator = KSVideoPlayer.Coordinator() }
                 self.isLoading = false
                 self.isPlaying = true
                 return  // KSPlayer handles playback — don't create AVPlayer
@@ -459,6 +463,9 @@ final class PlayerViewModel: NSObject {
         player?.replaceCurrentItem(with: nil)
         player = nil
         stalkerLoaderDelegate = nil
+        ksPlayerURL = nil
+        ksPlayerOptions = nil
+        ksPlayerCoordinator = nil
         isLoading = true
         isBuffering = false
         error = nil

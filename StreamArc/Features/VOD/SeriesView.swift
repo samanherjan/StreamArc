@@ -86,8 +86,8 @@ struct SeriesView: View {
         )) {
             if let ep = resumeEpisode {
                 PlayerView(streamURL: ep.streamURL, title: ep.title,
-                           startPosition: ep.position, posterURL: ep.posterURL,
-                           historyContentType: "episode")
+                           posterURL: ep.posterURL, contentType: "episode",
+                           startPosition: ep.position)
             }
         }
         .paywallSheet(isPresented: $showPaywall)
@@ -332,7 +332,8 @@ private struct SeriesHeroCarousel: View {
                 heroIndex = (heroIndex + 1) % items.count
             }
         }
-    
+    }
+
     private var bannerHeight: CGFloat {
         #if os(tvOS)
         return 500

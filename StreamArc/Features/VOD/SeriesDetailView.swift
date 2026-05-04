@@ -184,13 +184,13 @@ struct SeriesDetailView: View {
 #if os(macOS)
         .sheet(isPresented: $showPlayer) {
             if let ep = selectedEpisode {
-                PlayerView(streamURL: ep.streamURL, title: ep.title, profile: activeProfile, contentId: ep.id, posterURL: ep.posterURL ?? series.posterURL, historyContentType: "episode")
+                PlayerView(streamURL: ep.streamURL, title: ep.title, posterURL: ep.posterURL ?? series.posterURL, contentType: "episode", profile: activeProfile, contentId: ep.id)
             }
         }
 #else
         .fullScreenCover(isPresented: $showPlayer) {
             if let ep = selectedEpisode {
-                PlayerView(streamURL: ep.streamURL, title: ep.title, profile: activeProfile, contentId: ep.id, posterURL: ep.posterURL ?? series.posterURL, historyContentType: "episode")
+                PlayerView(streamURL: ep.streamURL, title: ep.title, posterURL: ep.posterURL ?? series.posterURL, contentType: "episode", profile: activeProfile, contentId: ep.id)
             }
         }
 #endif

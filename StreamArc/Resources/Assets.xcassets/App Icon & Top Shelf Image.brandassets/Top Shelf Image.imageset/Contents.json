@@ -3,8 +3,12 @@
     {
       "filename" : "TopShelf_1x.jpeg",
       "idiom" : "tv",
-      "role" : "top-shelf-image",
       "scale" : "1x"
+    },
+    {
+      "filename" : "TopShelf_1x 1.jpeg",
+      "idiom" : "tv",
+      "scale" : "2x"
     }
   ],
   "info" : {
