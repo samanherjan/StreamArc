@@ -15,9 +15,27 @@ struct EPGGridView: View {
     @State private var selectedProgram: EPGProgram?
     @State private var selectedProgramChannel: Channel?
 
-    private let timeSlotWidth: CGFloat = 200
-    private let rowHeight:     CGFloat = 56
-    private let channelWidth:  CGFloat = 140
+    private let timeSlotWidth: CGFloat = {
+        #if os(tvOS)
+        return 360  // 10-foot display needs wider time slots
+        #else
+        return 200
+        #endif
+    }()
+    private let rowHeight: CGFloat = {
+        #if os(tvOS)
+        return 88   // Large touch targets for tvOS focus
+        #else
+        return 56
+        #endif
+    }()
+    private let channelWidth: CGFloat = {
+        #if os(tvOS)
+        return 220
+        #else
+        return 140
+        #endif
+    }()
     // 48 half-hour slots = 24 hours
     private let totalSlots = 48
 
@@ -189,7 +207,6 @@ struct EPGGridView: View {
         }
         .cardFocusable()
 #if os(tvOS)
-        .buttonStyle(.card)
         .focusable()
 #endif
     }

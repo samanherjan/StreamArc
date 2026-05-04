@@ -126,17 +126,26 @@ struct LiveTVView: View {
             LazyVStack(alignment: .leading, spacing: 16) {
                 // Navigation / breadcrumb bar
                 navigationBar
+                    #if os(tvOS)
+                    .focusSection()
+                    #endif
 
                 if localVM.selectedGroup != nil {
-                    // Level 3: Channels in selected category
                     let channels = groupedChannels.first(where: { $0.category == localVM.selectedGroup })?.channels ?? []
                     channelGrid(channels: channels)
+                        #if os(tvOS)
+                        .focusSection()
+                        #endif
                 } else if let country = localVM.selectedCountry {
-                    // Level 2: Categories within selected country
                     categoryList(for: country)
+                        #if os(tvOS)
+                        .focusSection()
+                        #endif
                 } else {
-                    // Level 1: Country cards
                     countryGrid
+                        #if os(tvOS)
+                        .focusSection()
+                        #endif
                 }
 
                 Spacer(minLength: 20)
@@ -181,6 +190,30 @@ struct LiveTVView: View {
 
     private var countryPillBar: some View {
         let codes = localVM.countryCodes(from: viewModel.channels, isPremium: entitlements.isPremium)
+        #if os(tvOS)
+        // tvOS: focusable row of large buttons — remote-navigable, no touch scroll assumptions
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) {
+                tvFilterButton(title: "All", isSelected: localVM.selectedCountry == nil) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        localVM.selectedCountry = nil; localVM.selectedGroup = nil
+                    }
+                }
+                ForEach(codes, id: \.self) { code in
+                    tvFilterButton(
+                        title: "\(LiveTVViewModel.flagEmoji(for: code)) \(code)",
+                        isSelected: localVM.selectedCountry == code
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            localVM.selectedCountry = code; localVM.selectedGroup = nil
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 60)
+        }
+        .focusSection()
+        #else
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 CategoryChip(title: "All", isSelected: localVM.selectedCountry == nil) {
@@ -203,7 +236,24 @@ struct LiveTVView: View {
             }
             .padding(.horizontal)
         }
+        #endif
     }
+
+    /// Large, focusable filter button for tvOS country/category navigation.
+    #if os(tvOS)
+    private func tvFilterButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 28, weight: isSelected ? .bold : .medium))
+                .foregroundStyle(isSelected ? Color.saBackground : Color.saTextPrimary)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 14)
+                .background(isSelected ? Color.saAccent : Color.saCard)
+                .clipShape(Capsule())
+        }
+        .cardFocusable()
+    }
+    #endif
 
     // MARK: - Level 1: Country grid
 

@@ -3,34 +3,29 @@ import SwiftUI
 // MARK: - tvOS Custom Focus Button Style
 
 #if os(tvOS)
-/// Custom tvOS button style: scale up + accent-coloured glow on focus. No white border.
+/// tvOS button style: scale + accent glow on focus.
+/// Uses the system focus ring (no .focusEffectDisabled) for accessibility compliance.
 struct TVAccentFocusButtonStyle: ButtonStyle {
     @Environment(\.isFocused) private var isFocused
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : (isFocused ? 1.08 : 1.0))
+            .scaleEffect(configuration.isPressed ? 0.95 : (isFocused ? 1.1 : 1.0))
             .shadow(
-                color: isFocused ? Color.saAccent.opacity(0.55) : .black.opacity(0.25),
-                radius: isFocused ? 18 : 6,
-                y: isFocused ? 8 : 3
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.saAccent.opacity(isFocused ? 0.65 : 0), lineWidth: 2)
-                    .allowsHitTesting(false)
+                color: isFocused ? Color.saAccent.opacity(0.6) : .black.opacity(0.3),
+                radius: isFocused ? 22 : 8,
+                y: isFocused ? 10 : 4
             )
             .animation(.spring(response: 0.22, dampingFraction: 0.65), value: isFocused)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
-            // Suppress the system default white focus ring that tvOS adds by default.
-            .focusEffectDisabled()
+        // System focus ring is intentionally NOT suppressed — required for tvOS accessibility
     }
 }
 #endif
 
 // MARK: - iOS/macOS Card Button Style
 
-/// Card button style for iOS/iPadOS/macOS: accent-glow on hover/press, no system ring.
+/// Card button style for iOS/iPadOS/macOS: accent-glow on hover/press.
 struct CardButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         CardFocusLabel(label: configuration.label, isPressed: configuration.isPressed)
@@ -49,7 +44,7 @@ struct CardFocusLabel<L: View>: View {
     var body: some View {
         label
             .scaleEffect(isPressed ? 0.94 : (isActive ? 1.05 : 1.0))
-            .brightness(isActive ? 0.08 : 0)
+            .brightness(isActive ? 0.07 : 0)
             .shadow(
                 color: isActive ? Color.saAccent.opacity(0.45) : .black.opacity(0.2),
                 radius: isActive ? 14 : 5,
@@ -60,7 +55,6 @@ struct CardFocusLabel<L: View>: View {
                     .strokeBorder(Color.saAccent.opacity(isActive ? 0.7 : 0), lineWidth: 2)
                     .allowsHitTesting(false)
             )
-            .focusEffectDisabled()
             .animation(.spring(response: 0.22, dampingFraction: 0.65), value: isActive)
             .animation(.easeInOut(duration: 0.1), value: isPressed)
             #if !os(tvOS)
@@ -191,4 +185,11 @@ extension View {
         self
 #endif
     }
+}
+
+// MARK: - Shared notification names
+
+extension Notification.Name {
+    /// Posted by macOS Commands to switch the active sidebar/tab.
+    static let switchToTab = Notification.Name("StreamArc.switchToTab")
 }

@@ -32,14 +32,34 @@ struct SearchView: View {
                     if results.isEmpty {
                         EmptyContentView(title: "No results for \"\(searchVM.query)\"", subtitle: "")
                     } else {
+                        #if os(tvOS)
+                        // tvOS: large poster grid — minimum 200 pt wide, 3 columns
+                        ScrollView {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 24)], spacing: 28) {
+                                ForEach(results) { result in
+                                    Button { handleTap(result) } label: {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            PosterCardView(title: result.title, imageURL: result.imageURL)
+                                                .frame(width: 200, height: 300)
+                                            Label(result.typeLabel, systemImage: result.systemImage)
+                                                .font(.caption.bold())
+                                                .foregroundStyle(Color.saAccent)
+                                        }
+                                    }
+                                    .cardFocusable()
+                                }
+                            }
+                            .padding(48)
+                        }
+                        .background(Color.saBackground)
+                        .focusSection()
+                        #else
                         List(results) { result in
-                            Button {
-                                handleTap(result)
-                            } label: {
+                            Button { handleTap(result) } label: {
                                 HStack(spacing: 12) {
-                                    // Thumbnail
                                     PosterCardView(title: "", imageURL: result.imageURL)
                                         .frame(width: 50, height: 70)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(result.title)
                                             .font(.body.bold())
@@ -55,6 +75,7 @@ struct SearchView: View {
                         }
                         .listStyle(.plain)
                         .background(Color.saBackground)
+                        #endif
                     }
                 }
             }

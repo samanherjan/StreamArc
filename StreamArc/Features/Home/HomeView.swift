@@ -52,22 +52,28 @@ struct HomeView: View {
     @Environment(InterstitialAdManager.self) private var interstitialManager
 
     enum Tab: Int, CaseIterable {
-        case search, home, movies, series, liveTV, epg, settings
+        case home, liveTV, movies, series, settings, search, epg
+
+        /// Tabs displayed in the iOS tab bar — max 5, Home-first for thumb reach.
+        /// Search is surfaced via .searchable toolbar; EPG lives inside Live TV.
+        static var iOSTabs: [Tab] { [.home, .liveTV, .movies, .series, .settings] }
+
+        /// All tabs for macOS sidebar and tvOS TabView.
+        static var allDisplayTabs: [Tab] { [.home, .liveTV, .movies, .series, .search, .epg, .settings] }
+
         var title: String {
             switch self {
-            case .search: "Search"; case .home: "Home"; case .movies: "Movies"
-            case .series: "Series"; case .liveTV: "TV"; case .epg: "EPG"; case .settings: "Settings"
+            case .home: "Home"; case .movies: "Movies"; case .series: "Series"
+            case .liveTV: "TV"; case .epg: "EPG"; case .search: "Search"; case .settings: "Settings"
             }
         }
         var systemImage: String {
             switch self {
-            case .search: "magnifyingglass"; case .home: "house.fill"
-            case .movies: "film"; case .series: "tv.and.mediabox"
-            case .liveTV: "tv"; case .epg: "calendar"; case .settings: "gearshape"
+            case .home: "house.fill"; case .movies: "film"; case .series: "tv.and.mediabox"
+            case .liveTV: "tv"; case .epg: "calendar"; case .search: "magnifyingglass"
+            case .settings: "gearshape"
             }
         }
-        /// Show icon only (no text label) for search and settings tabs
-        var iconOnly: Bool { self == .search || self == .settings }
     }
 
     var activeProfile: Profile? { activeProfiles.first }
@@ -82,45 +88,90 @@ struct HomeView: View {
 #endif
     }
 
-    // MARK: - iOS layout
+    // MARK: - iOS / iPadOS layout
 
     #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+
     private var iOSLayout: some View {
         ZStack {
-            iOSTabView
-                .tint(Color.saAccent)
-                .streamArcBackground()
+            // iPad (regular width) → NavigationSplitView with sidebar
+            // iPhone (compact width) → 5-tab TabView
+            if hSizeClass == .regular {
+                iPadLayout
+            } else {
+                iPhoneTabView
+            }
+
             if viewModel.loadState == .loading {
                 SplashScreenView(progress: viewModel.loadProgress, status: viewModel.loadStatus)
                     .transition(.opacity)
                     .animation(.easeInOut(duration: 0.5), value: viewModel.loadState == .loading)
             }
         }
-            .onChange(of: selectedTab) { _, _ in
-                interstitialManager.recordTabSwitch()
+        .tint(Color.saAccent)
+        .streamArcBackground()
+        .onChange(of: selectedTab) { _, _ in interstitialManager.recordTabSwitch() }
+        .task(id: activeProfile?.id) {
+            if let profile = activeProfile { await viewModel.load(profile: profile) }
+            else { viewModel.noActiveProfile() }
+        }
+    }
+
+    /// iPhone: compact 5-tab TabView. Home first. Search exposed via .searchable on content views.
+    private var iPhoneTabView: some View {
+        TabView(selection: $selectedTab) {
+            ForEach(Tab.iOSTabs, id: \.self) { tab in
+                tabContent(tab)
+                    .tabItem { Label(tab.title, systemImage: tab.systemImage) }
+                    .tag(tab)
             }
-            .task(id: activeProfile?.id) {
-                if let profile = activeProfile {
-                    await viewModel.load(profile: profile)
-                } else {
-                    viewModel.noActiveProfile()
+        }
+    }
+
+    /// iPad: NavigationSplitView — sidebar list + main content area.
+    private var iPadLayout: some View {
+        NavigationSplitView(columnVisibility: .constant(.doubleColumn)) {
+            List(Tab.allDisplayTabs, id: \.self) { tab in
+                Button {
+                    selectedTab = tab
+                } label: {
+                    Label(tab.title, systemImage: tab.systemImage)
+                        .foregroundStyle(selectedTab == tab ? Color.saAccent : Color.saTextPrimary)
+                        .fontWeight(selectedTab == tab ? .semibold : .regular)
+                }
+                .listRowBackground(selectedTab == tab ? Color.saAccent.opacity(0.12) : Color.clear)
+            }
+            .listStyle(.sidebar)
+            .navigationTitle("StreamArc")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    profileToolbarButton
                 }
             }
+        } detail: {
+            tabContent(selectedTab)
+        }
+        .navigationSplitViewStyle(.balanced)
     }
 
     @ViewBuilder
-    private var iOSTabView: some View {
-        TabView(selection: $selectedTab) {
-            ForEach(Tab.allCases, id: \.self) { tab in
-                tabContent(tab)
-                    .tabItem {
-                        if tab.iconOnly {
-                            Image(systemName: tab.systemImage)
-                        } else {
-                            Label(tab.title, systemImage: tab.systemImage)
-                        }
+    private var profileToolbarButton: some View {
+        if let profile = activeProfile {
+            Menu {
+                ForEach(allProfiles) { p in
+                    Button {
+                        for pr in allProfiles { pr.isActive = false }
+                        p.isActive = true
+                    } label: {
+                        Label(p.name, systemImage: p.isActive ? "checkmark.circle.fill" : "circle")
                     }
-                    .tag(tab)
+                }
+                Divider()
+                Button("Add Profile", systemImage: "plus") { showAddProfile = true }
+            } label: {
+                Label(profile.name, systemImage: "person.circle")
+                    .labelStyle(.iconOnly)
             }
         }
     }
@@ -131,32 +182,23 @@ struct HomeView: View {
     #if os(tvOS)
     private var tvLayout: some View {
         ZStack {
-        TabView(selection: $selectedTab) {
-            ForEach(Tab.allCases, id: \.self) { tab in
-                tabContent(tab)
-                    .tabItem {
-                        if tab.iconOnly {
-                            Image(systemName: tab.systemImage)
-                        } else {
-                            Label(tab.title, systemImage: tab.systemImage)
-                        }
-                    }
-                    .tag(tab)
+            TabView(selection: $selectedTab) {
+                ForEach(Tab.allDisplayTabs, id: \.self) { tab in
+                    tabContent(tab)
+                        .tabItem { Label(tab.title, systemImage: tab.systemImage) }
+                        .tag(tab)
+                }
+            }
+            .task(id: activeProfile?.id) {
+                if let profile = activeProfile { await viewModel.load(profile: profile) }
+                else { viewModel.noActiveProfile() }
+            }
+            if viewModel.loadState == .loading {
+                SplashScreenView(progress: viewModel.loadProgress, status: viewModel.loadStatus)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.5), value: viewModel.loadState == .loading)
             }
         }
-        .task(id: activeProfile?.id) {
-            if let profile = activeProfile {
-                await viewModel.load(profile: profile)
-            } else {
-                viewModel.noActiveProfile()
-            }
-        }
-        if viewModel.loadState == .loading {
-            SplashScreenView(progress: viewModel.loadProgress, status: viewModel.loadStatus)
-                .transition(.opacity)
-                .animation(.easeInOut(duration: 0.5), value: viewModel.loadState == .loading)
-        }
-        } // end ZStack
     }
     #endif
 
@@ -165,7 +207,7 @@ struct HomeView: View {
     #if os(macOS)
     private var macLayout: some View {
         NavigationSplitView {
-            List(Tab.allCases, id: \.self, selection: $selectedTab) { tab in
+            List(Tab.allDisplayTabs, id: \.self, selection: $selectedTab) { tab in
                 Label(tab.title, systemImage: tab.systemImage)
                     .tag(tab)
             }
@@ -303,115 +345,159 @@ struct DashboardView: View {
         viewModel.channels.filter { $0.currentProgram != nil }.prefix(20).map { $0 }
     }
 
-    var body: some View {
-        ZStack {
-            Color.saBackground.ignoresSafeArea()
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                    // Hero carousel
-                    if !heroItems.isEmpty {
-                        DashboardHero(items: heroItems, heroIndex: $heroIndex) { item in
-                            if let v = viewModel.vodItems.first(where: {
-                                $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
-                                item.displayTitle.localizedCaseInsensitiveContains($0.title)
-                            }) { selectedVOD = v }
-                            else if let s = viewModel.series.first(where: {
-                                $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
-                                item.displayTitle.localizedCaseInsensitiveContains($0.title)
-                            }) { selectedSeries = s }
-                        }
-                        .padding(.bottom, 28)
-                    }
+    @Query private var allProfiles: [Profile]
+    @State private var showAddProfile = false
 
-                    // Continue Watching
-                    ContinueWatchingRow(seriesLibrary: viewModel.series) { entry, nextEp in
-                        if let nextEp {
-                            // Up Next — play next episode directly
-                            resumeEpisode = (streamURL: nextEp.streamURL, title: nextEp.title,
-                                             posterURL: nextEp.posterURL, position: 0)
-                        } else if entry.contentType == "episode" {
-                            // Resume in-progress episode
-                            if let series = viewModel.series.first(where: { s in
-                                s.seasons.flatMap(\.episodes).contains(where: { $0.id == entry.contentId })
-                            }), let ep = series.seasons.flatMap(\.episodes).first(where: { $0.id == entry.contentId }) {
-                                resumeEpisode = (streamURL: ep.streamURL, title: entry.title,
-                                                 posterURL: entry.imageURL, position: entry.lastPosition)
-                            }
-                        } else if entry.contentType == "vod" {
-                            // Resume in-progress movie
-                            if let match = viewModel.vodItems.first(where: { $0.id == entry.contentId }) {
-                                resumeVODPosition = entry.lastPosition
-                                resumeVOD = match
-                            }
-                        }
-                    }
-                    .padding(.bottom, 28)
-
-                    // Live Now
-                    if !liveNowChannels.isEmpty {
-                        PlexShelfSection(title: "Live Now", icon: "dot.radiowaves.left.and.right", iconColor: .red) {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                LazyHStack(spacing: 12) {
-                                    ForEach(liveNowChannels) { ch in
-                                        Button { selectedChannel = ch; showChannelPlayer = true } label: {
-                                            LiveNowCard(channel: ch)
-                                        }
-                                        .cardFocusable()
-                                    }
-                                }
-                                .padding(.horizontal).padding(.vertical, 4)
-                            }
-                        }
-                        .padding(.bottom, 28)
-                    }
-
-                    // Trending Movies
-                    if !trendingMovies.isEmpty {
-                        PlexShelfSection(title: "Trending Movies", icon: "flame.fill", iconColor: .orange) {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                LazyHStack(alignment: .top, spacing: 10) {
-                                    ForEach(trendingMovies) { item in
-                                        Button {
-                                            if let v = viewModel.vodItems.first(where: {
-                                                $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
-                                                item.displayTitle.localizedCaseInsensitiveContains($0.title)
-                                            }) { selectedVOD = v }
-                                        } label: { MovieTMDBPosterCard(item: item) }
-                                        .cardFocusable()
-                                    }
-                                }
-                                .padding(.horizontal).padding(.vertical, 4)
-                            }
-                        }
-                        .padding(.bottom, 28)
-                    }
-
-                    // Trending TV
-                    if !trendingTV.isEmpty {
-                        PlexShelfSection(title: "Trending TV Shows", icon: "tv.fill", iconColor: .blue) {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                LazyHStack(alignment: .top, spacing: 10) {
-                                    ForEach(trendingTV) { item in
-                                        Button {
-                                            if let s = viewModel.series.first(where: {
-                                                $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
-                                                item.displayTitle.localizedCaseInsensitiveContains($0.title)
-                                            }) { selectedSeries = s }
-                                        } label: { SeriesTMDBPosterCard(item: item) }
-                                        .cardFocusable()
-                                    }
-                                }
-                                .padding(.horizontal).padding(.vertical, 4)
-                            }
-                        }
-                        .padding(.bottom, 28)
-                    }
-
-                    Spacer(minLength: 60)
+    /// iOS toolbar profile switcher menu.
+    @ViewBuilder
+    private var profileMenuButton: some View {
+        #if os(iOS)
+        Menu {
+            ForEach(allProfiles) { p in
+                Button {
+                    for pr in allProfiles { pr.isActive = false }
+                    p.isActive = true
+                } label: {
+                    Label(p.name, systemImage: p.isActive ? "checkmark.circle.fill" : "circle")
+                }
             }
+            Divider()
+            Button("Add Profile", systemImage: "plus") { showAddProfile = true }
+        } label: {
+            Image(systemName: "person.circle")
+                .font(.body.weight(.medium))
         }
+        #endif
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.saBackground.ignoresSafeArea()
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        // Hero carousel
+                        if !heroItems.isEmpty {
+                            DashboardHero(items: heroItems, heroIndex: $heroIndex) { item in
+                                if let v = viewModel.vodItems.first(where: {
+                                    $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
+                                    item.displayTitle.localizedCaseInsensitiveContains($0.title)
+                                }) { selectedVOD = v }
+                                else if let s = viewModel.series.first(where: {
+                                    $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
+                                    item.displayTitle.localizedCaseInsensitiveContains($0.title)
+                                }) { selectedSeries = s }
+                            }
+                            .padding(.bottom, 28)
+                            #if os(tvOS)
+                            .focusSection()
+                            #endif
+                        }
+
+                        // Continue Watching
+                        ContinueWatchingRow(seriesLibrary: viewModel.series) { entry, nextEp in
+                            if let nextEp {
+                                resumeEpisode = (streamURL: nextEp.streamURL, title: nextEp.title,
+                                                 posterURL: nextEp.posterURL, position: 0)
+                            } else if entry.contentType == "episode" {
+                                if let series = viewModel.series.first(where: { s in
+                                    s.seasons.flatMap(\.episodes).contains(where: { $0.id == entry.contentId })
+                                }), let ep = series.seasons.flatMap(\.episodes).first(where: { $0.id == entry.contentId }) {
+                                    resumeEpisode = (streamURL: ep.streamURL, title: entry.title,
+                                                     posterURL: entry.imageURL, position: entry.lastPosition)
+                                }
+                            } else if entry.contentType == "vod" {
+                                if let match = viewModel.vodItems.first(where: { $0.id == entry.contentId }) {
+                                    resumeVODPosition = entry.lastPosition
+                                    resumeVOD = match
+                                }
+                            }
+                        }
+                        .padding(.bottom, 28)
+                        #if os(tvOS)
+                        .focusSection()
+                        #endif
+
+                        // Live Now
+                        if !liveNowChannels.isEmpty {
+                            PlexShelfSection(title: "Live Now", icon: "dot.radiowaves.left.and.right", iconColor: .red) {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    LazyHStack(spacing: 12) {
+                                        ForEach(liveNowChannels) { ch in
+                                            Button { selectedChannel = ch; showChannelPlayer = true } label: {
+                                                LiveNowCard(channel: ch)
+                                            }
+                                            .cardFocusable()
+                                        }
+                                    }
+                                    .padding(.horizontal).padding(.vertical, 4)
+                                }
+                            }
+                            .padding(.bottom, 28)
+                            #if os(tvOS)
+                            .focusSection()
+                            #endif
+                        }
+
+                        // Trending Movies
+                        if !trendingMovies.isEmpty {
+                            PlexShelfSection(title: "Trending Movies", icon: "flame.fill", iconColor: .orange) {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    LazyHStack(alignment: .top, spacing: 10) {
+                                        ForEach(trendingMovies) { item in
+                                            Button {
+                                                if let v = viewModel.vodItems.first(where: {
+                                                    $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
+                                                    item.displayTitle.localizedCaseInsensitiveContains($0.title)
+                                                }) { selectedVOD = v }
+                                            } label: { MovieTMDBPosterCard(item: item) }
+                                            .cardFocusable()
+                                        }
+                                    }
+                                    .padding(.horizontal).padding(.vertical, 4)
+                                }
+                            }
+                            .padding(.bottom, 28)
+                            #if os(tvOS)
+                            .focusSection()
+                            #endif
+                        }
+
+                        // Trending TV
+                        if !trendingTV.isEmpty {
+                            PlexShelfSection(title: "Trending TV Shows", icon: "tv.fill", iconColor: .blue) {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    LazyHStack(alignment: .top, spacing: 10) {
+                                        ForEach(trendingTV) { item in
+                                            Button {
+                                                if let s = viewModel.series.first(where: {
+                                                    $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
+                                                    item.displayTitle.localizedCaseInsensitiveContains($0.title)
+                                                }) { selectedSeries = s }
+                                            } label: { SeriesTMDBPosterCard(item: item) }
+                                            .cardFocusable()
+                                        }
+                                    }
+                                    .padding(.horizontal).padding(.vertical, 4)
+                                }
+                            }
+                            .padding(.bottom, 28)
+                            #if os(tvOS)
+                            .focusSection()
+                            #endif
+                        }
+
+                        Spacer(minLength: 60)
+                    }
+                }
+            }
+            .background(Color.saBackground.ignoresSafeArea())
+            .navigationTitle("Home")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { profileMenuButton } }
+            #endif
         }
-        .background(Color.saBackground.ignoresSafeArea())
         .task { await loadTrending() }
         .sheet(item: $selectedVOD) { MovieDetailView(item: $0) }
         .sheet(item: $selectedSeries) { SeriesDetailView(series: $0) }
@@ -420,6 +506,25 @@ struct DashboardView: View {
                        posterURL: item.posterURL, contentType: "vod",
                        startPosition: resumeVODPosition, contentId: item.id)
         }
+        #if os(macOS)
+        .sheet(isPresented: Binding(
+            get: { resumeEpisode != nil },
+            set: { if !$0 { resumeEpisode = nil } }
+        )) {
+            if let ep = resumeEpisode {
+                PlayerView(streamURL: ep.streamURL, title: ep.title,
+                           posterURL: ep.posterURL, contentType: "episode",
+                           startPosition: ep.position)
+            }
+        }
+        .sheet(isPresented: $showChannelPlayer) {
+            if let ch = selectedChannel {
+                PlayerView(streamURL: ch.streamURL, title: ch.name,
+                           posterURL: ch.logoURL, isLiveTV: true,
+                           channel: ch, allChannels: viewModel.channels)
+            }
+        }
+        #else
         .fullScreenCover(isPresented: Binding(
             get: { resumeEpisode != nil },
             set: { if !$0 { resumeEpisode = nil } }
@@ -437,6 +542,7 @@ struct DashboardView: View {
                            channel: ch, allChannels: viewModel.channels)
             }
         }
+        #endif
     }
 
     private func loadTrending() async {
@@ -632,11 +738,25 @@ private struct LiveNowCard: View {
                     }
                 }
             }
+            #if os(tvOS)
+            .frame(width: 280, height: 158)
+            #else
             .frame(width: 160, height: 90)
+            #endif
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.07), lineWidth: 1))
-            Text(channel.name).font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.saTextPrimary).lineLimit(1).frame(width: 160)
+            Text(channel.name)
+                #if os(tvOS)
+                .font(.system(size: 20, weight: .semibold))
+                #else
+                .font(.system(size: 11, weight: .semibold))
+                #endif
+                .foregroundStyle(Color.saTextPrimary).lineLimit(1)
+                #if os(tvOS)
+                .frame(width: 280)
+                #else
+                .frame(width: 160)
+                #endif
         }
     }
 }
@@ -656,6 +776,15 @@ struct EPGTabView: View {
                 onChannelTap: { ch in selectedChannel = ch; showPlayer = true }
             )
             .navigationTitle("EPG")
+            #if os(macOS)
+            .sheet(isPresented: $showPlayer) {
+                if let ch = selectedChannel {
+                    PlayerView(streamURL: ch.streamURL, title: ch.name,
+                               posterURL: ch.logoURL, isLiveTV: true,
+                               channel: ch, allChannels: viewModel.channels)
+                }
+            }
+            #else
             .fullScreenCover(isPresented: $showPlayer) {
                 if let ch = selectedChannel {
                     PlayerView(streamURL: ch.streamURL, title: ch.name,
@@ -663,6 +792,7 @@ struct EPGTabView: View {
                                channel: ch, allChannels: viewModel.channels)
                 }
             }
+            #endif
         }
     }
 }

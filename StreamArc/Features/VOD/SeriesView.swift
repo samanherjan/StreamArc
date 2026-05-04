@@ -80,6 +80,18 @@ struct SeriesView: View {
             SeriesTMDBDiscoverySheet(item: i, seriesLibrary: viewModel.series) { selectedSeries = $0 }
         }
         .sheet(item: $resumeSeries) { SeriesDetailView(series: $0) }
+        #if os(macOS)
+        .sheet(isPresented: Binding(
+            get: { resumeEpisode != nil },
+            set: { if !$0 { resumeEpisode = nil } }
+        )) {
+            if let ep = resumeEpisode {
+                PlayerView(streamURL: ep.streamURL, title: ep.title,
+                           posterURL: ep.posterURL, contentType: "episode",
+                           startPosition: ep.position)
+            }
+        }
+        #else
         .fullScreenCover(isPresented: Binding(
             get: { resumeEpisode != nil },
             set: { if !$0 { resumeEpisode = nil } }
@@ -90,6 +102,7 @@ struct SeriesView: View {
                            startPosition: ep.position)
             }
         }
+        #endif
         .paywallSheet(isPresented: $showPaywall)
     }
 

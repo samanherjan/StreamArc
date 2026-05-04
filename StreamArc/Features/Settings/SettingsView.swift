@@ -97,6 +97,8 @@ struct SettingsView: View {
 
                 // Cache
                 Section("Storage") {
+                    Button("Refresh Library Data") { clearContentCache() }
+                        .tint(Color.saAccent)
                     Button("Clear EPG Cache") { clearEPGCache() }
                         .tint(.red)
                     Button("Clear Image Cache") {
@@ -142,6 +144,9 @@ struct SettingsView: View {
             #endif
             .background(Color.saBackground)
             .navigationTitle("Settings")
+            #if os(macOS)
+            .formStyle(.grouped)
+            #endif
             .paywallSheet(isPresented: $showPaywall)
             .sheet(isPresented: $showParentalLock) { ParentalLockView() }
             .alert("Cache cleared", isPresented: $showCacheClearedAlert) {
@@ -155,6 +160,13 @@ struct SettingsView: View {
             await EPGCacheManager.shared.clearAll()
             showCacheClearedAlert = true
         }
+    }
+
+    private func clearContentCache() {
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ContentCache", isDirectory: true)
+        try? FileManager.default.removeItem(at: dir)
+        showCacheClearedAlert = true
     }
 
     private var appVersion: String {

@@ -6,7 +6,6 @@ import SwiftData
 struct StreamArcApp: App {
 
     @State private var appEnv = AppEnvironment()
-    @State private var selectedTab: HomeView.Tab = .liveTV
 
     var body: some Scene {
         WindowGroup {
@@ -26,6 +25,10 @@ struct StreamArcApp: App {
                 Button("About StreamArc") { }
             }
             CommandGroup(after: .newItem) {
+                Button("Home") {
+                    NotificationCenter.default.post(name: .switchToTab, object: HomeView.Tab.home)
+                }
+                .keyboardShortcut("0", modifiers: .command)
                 Button("Live TV") {
                     NotificationCenter.default.post(name: .switchToTab, object: HomeView.Tab.liveTV)
                 }
@@ -41,6 +44,10 @@ struct StreamArcApp: App {
                 Button("Search") {
                     NotificationCenter.default.post(name: .switchToTab, object: HomeView.Tab.search)
                 }
+                .keyboardShortcut("f", modifiers: .command)
+                Button("EPG / TV Guide") {
+                    NotificationCenter.default.post(name: .switchToTab, object: HomeView.Tab.epg)
+                }
                 .keyboardShortcut("4", modifiers: .command)
                 Button("Settings") {
                     NotificationCenter.default.post(name: .switchToTab, object: HomeView.Tab.settings)
@@ -51,7 +58,5 @@ struct StreamArcApp: App {
     }
 }
 
-extension Notification.Name {
-    static let switchToTab = Notification.Name("StreamArc.switchToTab")
-}
 #endif
+

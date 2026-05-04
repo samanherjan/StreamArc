@@ -56,6 +56,9 @@ struct FavoritesPinBar: View {
                     .padding(.horizontal)
                     .padding(.vertical, 4)
                 }
+                #if os(tvOS)
+                .focusSection()
+                #endif
             }
             .onAppear { reload() }
         }
