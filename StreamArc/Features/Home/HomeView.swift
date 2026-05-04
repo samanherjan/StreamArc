@@ -504,7 +504,7 @@ struct DashboardView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 10) {
                         ForEach(trendingTV) { item in
-                            Button { openTV(item) } label: { SeriesTMDBPosterCard(item: item) }
+                            Button { openTV(item) } label: { MovieTMDBPosterCard(item: item) }
                             .cardFocusable()
                         }
                     }

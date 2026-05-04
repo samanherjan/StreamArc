@@ -362,49 +362,6 @@ private struct MoviesHeroCarousel: View {
     }
 }
 
-// MARK: - All Category Card
-
-struct AllCategoryCard: View {
-    let title: String
-    let icon: String
-    let count: Int
-
-    @Environment(\.isFocused) private var isFocused
-
-    private let gradient = LinearGradient(
-        colors: [Color.saAccent.opacity(0.9), Color.saAccent.opacity(0.5)],
-        startPoint: .topLeading, endPoint: .bottomTrailing
-    )
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Card face — coloured background with icon
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(gradient)
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(isFocused ? Color.white.opacity(0.6) : Color.white.opacity(0.15), lineWidth: 1.5)
-                    )
-                VStack(spacing: 8) {
-                    Image(systemName: icon)
-                        .font(.system(size: 32, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text(title)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-            }
-            // Count label
-            Text("\(count) \(count == 1 ? "title" : "titles")")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.saTextSecondary)
-        }
-        .padding(.bottom, 4)
-    }
-}
-
 // MARK: - Poster Cards (shared)
 
 struct MovieTMDBPosterCard: View {
