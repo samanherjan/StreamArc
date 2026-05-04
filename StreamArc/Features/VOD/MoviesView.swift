@@ -91,13 +91,16 @@ struct MoviesView: View {
         .onChange(of: viewModel.loadState) { _, s in if case .loaded = s { rebuildCache() } }
         .onChange(of: entitlements.isPremium) { _, _ in rebuildCache() }
         #if os(macOS)
-        #if os(tvOS)
-        .fullScreenCover(item: $selectedItem) { MovieDetailView(item: $0) }
-        #else
         .sheet(item: $selectedItem) { MovieDetailView(item: $0) }
-        #endif
         .sheet(item: $selectedTMDB) { i in TMDBDiscoverySheet(item: i, vodItems: viewModel.vodItems) { selectedItem = $0 } }
         .sheet(item: $resumeItem) { item in
+            PlayerView(streamURL: item.streamURL, title: item.title, posterURL: item.posterURL,
+                       contentType: "vod", startPosition: resumePosition, contentId: item.id)
+        }
+        #elseif os(tvOS)
+        .fullScreenCover(item: $selectedItem) { MovieDetailView(item: $0) }
+        .sheet(item: $selectedTMDB) { i in TMDBDiscoverySheet(item: i, vodItems: viewModel.vodItems) { selectedItem = $0 } }
+        .fullScreenCover(item: $resumeItem) { item in
             PlayerView(streamURL: item.streamURL, title: item.title, posterURL: item.posterURL,
                        contentType: "vod", startPosition: resumePosition, contentId: item.id)
         }

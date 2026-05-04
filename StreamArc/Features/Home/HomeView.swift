@@ -322,6 +322,7 @@ struct DashboardView: View {
     var viewModel: HomeViewModel
 
     @Environment(AppEnvironment.self) private var appEnv
+    @Environment(\.modelContext) private var modelContext
     @State private var trendingMovies: [TMDBTrendingItem] = []
     @State private var trendingTV:    [TMDBTrendingItem] = []
     @State private var heroIndex: Int = 0
@@ -332,6 +333,13 @@ struct DashboardView: View {
     @State private var resumeEpisode: (streamURL: String, title: String, posterURL: String?, position: Double)?
     @State private var resumeVOD: VODItem?
     @State private var resumeVODPosition: Double = 0
+
+    @Query(filter: #Predicate<Profile> { $0.isActive == true })
+    private var activeProfiles: [Profile]
+    @Query private var allProfiles: [Profile]
+    @State private var showAddProfile = false
+
+    private var activeProfile: Profile? { activeProfiles.first }
 
     private var apiKey: String {
         appEnv.settingsStore.tmdbAPIKey.isEmpty ? APIKeys.tmdb : appEnv.settingsStore.tmdbAPIKey
@@ -345,10 +353,52 @@ struct DashboardView: View {
         viewModel.channels.filter { $0.currentProgram != nil }.prefix(20).map { $0 }
     }
 
-    @Query private var allProfiles: [Profile]
-    @State private var showAddProfile = false
+    // MARK: - Tap handlers
 
-    /// iOS toolbar profile switcher menu.
+    /// Open detail for a TMDB trending movie.
+    /// If the title matches a library VODItem, use it (preserves streamURL).
+    /// Otherwise create a TMDB-only stub so MovieDetailView still shows metadata.
+    private func openMovie(_ item: TMDBTrendingItem) {
+        if let v = viewModel.vodItems.first(where: {
+            $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
+            item.displayTitle.localizedCaseInsensitiveContains($0.title)
+        }) {
+            selectedVOD = v
+        } else {
+            // No library match — create TMDB stub (tmdbId allows fetchDetail to work)
+            selectedVOD = VODItem(
+                id: "tmdb-\(item.id)",
+                title: item.displayTitle,
+                posterURL: item.posterURL?.absoluteString,
+                streamURL: "",
+                tmdbId: item.id,
+                type: .movie
+            )
+        }
+    }
+
+    /// Open detail for a TMDB trending TV show.
+    private func openTV(_ item: TMDBTrendingItem) {
+        if let s = viewModel.series.first(where: {
+            $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
+            item.displayTitle.localizedCaseInsensitiveContains($0.title)
+        }) {
+            selectedSeries = s
+        } else {
+            // No library match — show as movie detail (TMDB-only stub, type=.series for TV metadata)
+            selectedVOD = VODItem(
+                id: "tmdb-\(item.id)",
+                title: item.displayTitle,
+                posterURL: item.posterURL?.absoluteString,
+                streamURL: "",
+                tmdbId: item.id,
+                type: .series
+            )
+        }
+    }
+
+    // MARK: - Profile switcher (iOS toolbar)
+
     @ViewBuilder
     private var profileMenuButton: some View {
         #if os(iOS)
@@ -357,6 +407,7 @@ struct DashboardView: View {
                 Button {
                     for pr in allProfiles { pr.isActive = false }
                     p.isActive = true
+                    try? modelContext.save()
                 } label: {
                     Label(p.name, systemImage: p.isActive ? "checkmark.circle.fill" : "circle")
                 }
@@ -364,129 +415,220 @@ struct DashboardView: View {
             Divider()
             Button("Add Profile", systemImage: "plus") { showAddProfile = true }
         } label: {
-            Image(systemName: "person.circle")
-                .font(.body.weight(.medium))
+            Image(systemName: "person.circle").font(.body.weight(.medium))
         }
         #endif
     }
 
+    // MARK: - Shelf content (shared between tvOS and iOS paths)
+
+    @ViewBuilder private var heroSection: some View {
+        if !heroItems.isEmpty {
+            DashboardHero(items: heroItems, heroIndex: $heroIndex) { item in
+                if item.mediaType == "tv" { openTV(item) } else { openMovie(item) }
+            }
+            .padding(.bottom, 28)
+            #if os(tvOS)
+            .focusSection()
+            #endif
+        }
+    }
+
+    @ViewBuilder private var continueWatchingSection: some View {
+        ContinueWatchingRow(seriesLibrary: viewModel.series) { entry, nextEp in
+            if let nextEp {
+                resumeEpisode = (streamURL: nextEp.streamURL, title: nextEp.title,
+                                 posterURL: nextEp.posterURL, position: 0)
+            } else if entry.contentType == "episode" {
+                if let series = viewModel.series.first(where: { s in
+                    s.seasons.flatMap(\.episodes).contains(where: { $0.id == entry.contentId })
+                }), let ep = series.seasons.flatMap(\.episodes).first(where: { $0.id == entry.contentId }) {
+                    resumeEpisode = (streamURL: ep.streamURL, title: entry.title,
+                                     posterURL: entry.imageURL, position: entry.lastPosition)
+                }
+            } else if entry.contentType == "vod" {
+                if let match = viewModel.vodItems.first(where: { $0.id == entry.contentId }) {
+                    resumeVODPosition = entry.lastPosition; resumeVOD = match
+                }
+            }
+        }
+        .padding(.bottom, 28)
+        #if os(tvOS)
+        .focusSection()
+        #endif
+    }
+
+    @ViewBuilder private var liveNowSection: some View {
+        if !liveNowChannels.isEmpty {
+            PlexShelfSection(title: "Live Now", icon: "dot.radiowaves.left.and.right", iconColor: .red) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(liveNowChannels) { ch in
+                            Button { selectedChannel = ch; showChannelPlayer = true } label: { LiveNowCard(channel: ch) }
+                            .cardFocusable()
+                        }
+                    }
+                    .padding(.horizontal).padding(.vertical, 4)
+                }
+            }
+            .padding(.bottom, 28)
+            #if os(tvOS)
+            .focusSection()
+            #endif
+        }
+    }
+
+    @ViewBuilder private var trendingMoviesSection: some View {
+        if !trendingMovies.isEmpty {
+            PlexShelfSection(title: "Trending Movies", icon: "flame.fill", iconColor: .orange) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 10) {
+                        ForEach(trendingMovies) { item in
+                            Button { openMovie(item) } label: { MovieTMDBPosterCard(item: item) }
+                            .cardFocusable()
+                        }
+                    }
+                    .padding(.horizontal).padding(.vertical, 4)
+                }
+            }
+            .padding(.bottom, 28)
+            #if os(tvOS)
+            .focusSection()
+            #endif
+        }
+    }
+
+    @ViewBuilder private var trendingTVSection: some View {
+        if !trendingTV.isEmpty {
+            PlexShelfSection(title: "Trending TV Shows", icon: "tv.fill", iconColor: .blue) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 10) {
+                        ForEach(trendingTV) { item in
+                            Button { openTV(item) } label: { SeriesTMDBPosterCard(item: item) }
+                            .cardFocusable()
+                        }
+                    }
+                    .padding(.horizontal).padding(.vertical, 4)
+                }
+            }
+            .padding(.bottom, 28)
+            #if os(tvOS)
+            .focusSection()
+            #endif
+        }
+    }
+
+    // MARK: - Main body
+
     var body: some View {
+        mainContent
+            .task { await loadTrending() }
+            // tvOS: full-screen covers
+            #if os(tvOS)
+            .fullScreenCover(item: $selectedVOD) { MovieDetailView(item: $0) }
+            .fullScreenCover(item: $selectedSeries) { SeriesDetailView(series: $0) }
+            .fullScreenCover(isPresented: $showChannelPlayer) {
+                if let ch = selectedChannel {
+                    PlayerView(streamURL: ch.streamURL, title: ch.name,
+                               posterURL: ch.logoURL, isLiveTV: true,
+                               channel: ch, allChannels: viewModel.channels)
+                }
+            }
+            .fullScreenCover(isPresented: Binding(
+                get: { resumeEpisode != nil }, set: { if !$0 { resumeEpisode = nil } }
+            )) {
+                if let ep = resumeEpisode {
+                    PlayerView(streamURL: ep.streamURL, title: ep.title,
+                               posterURL: ep.posterURL, contentType: "episode", startPosition: ep.position)
+                }
+            }
+            .fullScreenCover(item: $resumeVOD) { item in
+                PlayerView(streamURL: item.streamURL, title: item.title,
+                           posterURL: item.posterURL, contentType: "vod",
+                           startPosition: resumeVODPosition, contentId: item.id)
+            }
+            // macOS: sheets
+            #elseif os(macOS)
+            .sheet(item: $selectedVOD) { MovieDetailView(item: $0) }
+            .sheet(item: $selectedSeries) { SeriesDetailView(series: $0) }
+            .sheet(item: $resumeVOD) { item in
+                PlayerView(streamURL: item.streamURL, title: item.title,
+                           posterURL: item.posterURL, contentType: "vod",
+                           startPosition: resumeVODPosition, contentId: item.id)
+            }
+            .sheet(isPresented: Binding(
+                get: { resumeEpisode != nil }, set: { if !$0 { resumeEpisode = nil } }
+            )) {
+                if let ep = resumeEpisode {
+                    PlayerView(streamURL: ep.streamURL, title: ep.title,
+                               posterURL: ep.posterURL, contentType: "episode", startPosition: ep.position)
+                }
+            }
+            .sheet(isPresented: $showChannelPlayer) {
+                if let ch = selectedChannel {
+                    PlayerView(streamURL: ch.streamURL, title: ch.name,
+                               posterURL: ch.logoURL, isLiveTV: true,
+                               channel: ch, allChannels: viewModel.channels)
+                }
+            }
+            // iOS: full-screen covers
+            #else
+            .sheet(item: $selectedVOD) { MovieDetailView(item: $0) }
+            .sheet(item: $selectedSeries) { SeriesDetailView(series: $0) }
+            .sheet(item: $resumeVOD) { item in
+                PlayerView(streamURL: item.streamURL, title: item.title,
+                           posterURL: item.posterURL, contentType: "vod",
+                           startPosition: resumeVODPosition, contentId: item.id)
+            }
+            .fullScreenCover(isPresented: Binding(
+                get: { resumeEpisode != nil }, set: { if !$0 { resumeEpisode = nil } }
+            )) {
+                if let ep = resumeEpisode {
+                    PlayerView(streamURL: ep.streamURL, title: ep.title,
+                               posterURL: ep.posterURL, contentType: "episode", startPosition: ep.position)
+                }
+            }
+            .fullScreenCover(isPresented: $showChannelPlayer) {
+                if let ch = selectedChannel {
+                    PlayerView(streamURL: ch.streamURL, title: ch.name,
+                               posterURL: ch.logoURL, isLiveTV: true,
+                               channel: ch, allChannels: viewModel.channels)
+                }
+            }
+            #endif
+    }
+
+    // MARK: - Platform-split main content
+
+    @ViewBuilder
+    private var mainContent: some View {
+        #if os(tvOS)
+        // tvOS: NO NavigationStack — TabView already provides the navigation context.
+        // NavigationStack inside tvOS TabView adds unwanted chrome.
+        ZStack {
+            Color.saBackground.ignoresSafeArea()
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    heroSection
+                    continueWatchingSection
+                    liveNowSection
+                    trendingMoviesSection
+                    trendingTVSection
+                    Spacer(minLength: 60)
+                }
+            }
+        }
+        #else
         NavigationStack {
             ZStack {
                 Color.saBackground.ignoresSafeArea()
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        // Hero carousel
-                        if !heroItems.isEmpty {
-                            DashboardHero(items: heroItems, heroIndex: $heroIndex) { item in
-                                if let v = viewModel.vodItems.first(where: {
-                                    $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
-                                    item.displayTitle.localizedCaseInsensitiveContains($0.title)
-                                }) { selectedVOD = v }
-                                else if let s = viewModel.series.first(where: {
-                                    $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
-                                    item.displayTitle.localizedCaseInsensitiveContains($0.title)
-                                }) { selectedSeries = s }
-                            }
-                            .padding(.bottom, 28)
-                            #if os(tvOS)
-                            .focusSection()
-                            #endif
-                        }
-
-                        // Continue Watching
-                        ContinueWatchingRow(seriesLibrary: viewModel.series) { entry, nextEp in
-                            if let nextEp {
-                                resumeEpisode = (streamURL: nextEp.streamURL, title: nextEp.title,
-                                                 posterURL: nextEp.posterURL, position: 0)
-                            } else if entry.contentType == "episode" {
-                                if let series = viewModel.series.first(where: { s in
-                                    s.seasons.flatMap(\.episodes).contains(where: { $0.id == entry.contentId })
-                                }), let ep = series.seasons.flatMap(\.episodes).first(where: { $0.id == entry.contentId }) {
-                                    resumeEpisode = (streamURL: ep.streamURL, title: entry.title,
-                                                     posterURL: entry.imageURL, position: entry.lastPosition)
-                                }
-                            } else if entry.contentType == "vod" {
-                                if let match = viewModel.vodItems.first(where: { $0.id == entry.contentId }) {
-                                    resumeVODPosition = entry.lastPosition
-                                    resumeVOD = match
-                                }
-                            }
-                        }
-                        .padding(.bottom, 28)
-                        #if os(tvOS)
-                        .focusSection()
-                        #endif
-
-                        // Live Now
-                        if !liveNowChannels.isEmpty {
-                            PlexShelfSection(title: "Live Now", icon: "dot.radiowaves.left.and.right", iconColor: .red) {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    LazyHStack(spacing: 12) {
-                                        ForEach(liveNowChannels) { ch in
-                                            Button { selectedChannel = ch; showChannelPlayer = true } label: {
-                                                LiveNowCard(channel: ch)
-                                            }
-                                            .cardFocusable()
-                                        }
-                                    }
-                                    .padding(.horizontal).padding(.vertical, 4)
-                                }
-                            }
-                            .padding(.bottom, 28)
-                            #if os(tvOS)
-                            .focusSection()
-                            #endif
-                        }
-
-                        // Trending Movies
-                        if !trendingMovies.isEmpty {
-                            PlexShelfSection(title: "Trending Movies", icon: "flame.fill", iconColor: .orange) {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    LazyHStack(alignment: .top, spacing: 10) {
-                                        ForEach(trendingMovies) { item in
-                                            Button {
-                                                if let v = viewModel.vodItems.first(where: {
-                                                    $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
-                                                    item.displayTitle.localizedCaseInsensitiveContains($0.title)
-                                                }) { selectedVOD = v }
-                                            } label: { MovieTMDBPosterCard(item: item) }
-                                            .cardFocusable()
-                                        }
-                                    }
-                                    .padding(.horizontal).padding(.vertical, 4)
-                                }
-                            }
-                            .padding(.bottom, 28)
-                            #if os(tvOS)
-                            .focusSection()
-                            #endif
-                        }
-
-                        // Trending TV
-                        if !trendingTV.isEmpty {
-                            PlexShelfSection(title: "Trending TV Shows", icon: "tv.fill", iconColor: .blue) {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    LazyHStack(alignment: .top, spacing: 10) {
-                                        ForEach(trendingTV) { item in
-                                            Button {
-                                                if let s = viewModel.series.first(where: {
-                                                    $0.title.localizedCaseInsensitiveContains(item.displayTitle) ||
-                                                    item.displayTitle.localizedCaseInsensitiveContains($0.title)
-                                                }) { selectedSeries = s }
-                                            } label: { SeriesTMDBPosterCard(item: item) }
-                                            .cardFocusable()
-                                        }
-                                    }
-                                    .padding(.horizontal).padding(.vertical, 4)
-                                }
-                            }
-                            .padding(.bottom, 28)
-                            #if os(tvOS)
-                            .focusSection()
-                            #endif
-                        }
-
+                        heroSection
+                        continueWatchingSection
+                        liveNowSection
+                        trendingMoviesSection
+                        trendingTVSection
                         Spacer(minLength: 60)
                     }
                 }
@@ -497,55 +639,6 @@ struct DashboardView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { profileMenuButton } }
             #endif
-        }
-        .task { await loadTrending() }
-        #if os(tvOS)
-        .fullScreenCover(item: $selectedVOD) { MovieDetailView(item: $0) }
-        .fullScreenCover(item: $selectedSeries) { SeriesDetailView(series: $0) }
-        #else
-        .sheet(item: $selectedVOD) { MovieDetailView(item: $0) }
-        .sheet(item: $selectedSeries) { SeriesDetailView(series: $0) }
-        #endif
-        .sheet(item: $resumeVOD) { item in
-            PlayerView(streamURL: item.streamURL, title: item.title,
-                       posterURL: item.posterURL, contentType: "vod",
-                       startPosition: resumeVODPosition, contentId: item.id)
-        }
-        #if os(macOS)
-        .sheet(isPresented: Binding(
-            get: { resumeEpisode != nil },
-            set: { if !$0 { resumeEpisode = nil } }
-        )) {
-            if let ep = resumeEpisode {
-                PlayerView(streamURL: ep.streamURL, title: ep.title,
-                           posterURL: ep.posterURL, contentType: "episode",
-                           startPosition: ep.position)
-            }
-        }
-        .sheet(isPresented: $showChannelPlayer) {
-            if let ch = selectedChannel {
-                PlayerView(streamURL: ch.streamURL, title: ch.name,
-                           posterURL: ch.logoURL, isLiveTV: true,
-                           channel: ch, allChannels: viewModel.channels)
-            }
-        }
-        #else
-        .fullScreenCover(isPresented: Binding(
-            get: { resumeEpisode != nil },
-            set: { if !$0 { resumeEpisode = nil } }
-        )) {
-            if let ep = resumeEpisode {
-                PlayerView(streamURL: ep.streamURL, title: ep.title,
-                           posterURL: ep.posterURL, contentType: "episode",
-                           startPosition: ep.position)
-            }
-        }
-        .fullScreenCover(isPresented: $showChannelPlayer) {
-            if let ch = selectedChannel {
-                PlayerView(streamURL: ch.streamURL, title: ch.name,
-                           posterURL: ch.logoURL, isLiveTV: true,
-                           channel: ch, allChannels: viewModel.channels)
-            }
         }
         #endif
     }
@@ -559,6 +652,7 @@ struct DashboardView: View {
         trendingTV     = Array(tv.prefix(8))
     }
 }
+
 
 // MARK: - Dashboard Hero
 
@@ -774,6 +868,21 @@ struct EPGTabView: View {
     @State private var showPlayer = false
 
     var body: some View {
+        // tvOS: no NavigationStack — EPG is a full-screen grid that fills the tab
+        #if os(tvOS)
+        EPGGridView(
+            channels: viewModel.channels,
+            epgMap: viewModel.epgMap,
+            onChannelTap: { ch in selectedChannel = ch; showPlayer = true }
+        )
+        .fullScreenCover(isPresented: $showPlayer) {
+            if let ch = selectedChannel {
+                PlayerView(streamURL: ch.streamURL, title: ch.name,
+                           posterURL: ch.logoURL, isLiveTV: true,
+                           channel: ch, allChannels: viewModel.channels)
+            }
+        }
+        #else
         NavigationStack {
             EPGGridView(
                 channels: viewModel.channels,
@@ -799,5 +908,6 @@ struct EPGTabView: View {
             }
             #endif
         }
+        #endif
     }
 }
